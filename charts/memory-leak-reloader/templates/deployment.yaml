@@ -1,0 +1,217 @@
+{{- $ds := .Values.datasource -}}
+{{- $needDD := or (eq $ds.type "datadog") .Values.notifications.datadogEvent.enabled -}}
+{{- $ddSecret := $ds.datadog.existingSecret.name | default (include "memreload.datadogSecretName" .) -}}
+{{- $ddApiKeyKey := $ds.datadog.existingSecret.apiKeyKey | default "api-key" -}}
+{{- $ddAppKeyKey := $ds.datadog.existingSecret.appKeyKey | default "app-key" -}}
+{{- $promSecret := $ds.prometheus.existingSecret.name | default (include "memreload.prometheusSecretName" .) -}}
+{{- $promTokenKey := $ds.prometheus.existingSecret.tokenKey | default "token" -}}
+{{- $slack := .Values.notifications.slack -}}
+{{- $slackSecret := $slack.existingSecret.name | default (include "memreload.slackSecretName" .) -}}
+{{- $slackWebhookKey := $slack.existingSecret.webhookKey | default "webhook-url" -}}
+{{- $slackBotKey := $slack.existingSecret.botTokenKey | default "bot-token" -}}
+{{- $routesEnabled := eq (include "memreload.routesEnabled" .) "true" -}}
+{{- $webhook := .Values.notifications.webhook -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "memreload.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "memreload.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "memreload.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "memreload.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}{{- toYaml . | nindent 8 }}{{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "memreload.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      containers:
+        - name: manager
+          image: {{ include "memreload.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --log-format={{ .Values.log.format }}
+            - --log-level={{ .Values.log.level }}
+            - --metrics-bind-address={{ .Values.metrics.bindAddress }}
+            - --health-probe-bind-address={{ .Values.healthProbeBindAddress }}
+            - --leader-elect={{ .Values.leaderElection.enabled }}
+            - --leader-election-id={{ .Values.leaderElection.id }}
+            - --dry-run={{ .Values.dryRun }}
+            - --scope-mode={{ .Values.scope.mode }}
+            {{- range .Values.scope.namespaces }}
+            - --namespace={{ . }}
+            {{- end }}
+            - --datasource={{ $ds.type }}
+            - --mode={{ .Values.detection.mode }}
+            - --threshold-percent={{ .Values.detection.thresholdPercent }}
+            - --window={{ .Values.detection.window }}
+            - --sample-interval={{ .Values.detection.sampleInterval }}
+            - --trend-min-growth={{ .Values.detection.trendMinGrowth }}
+            - --startup-grace={{ .Values.detection.startupGracePeriod }}
+            - --cooldown={{ .Values.rollout.cooldown }}
+            - --global-max-concurrent={{ .Values.rollout.globalMaxConcurrent }}
+            - --max-restarts-per-window={{ .Values.rollout.maxRestartsPerWindow }}
+            - --restart-window={{ .Values.rollout.restartWindow }}
+            - --inflight-timeout={{ .Values.rollout.inflightTimeout }}
+            - --requeue-after={{ .Values.rollout.requeueAfter }}
+            - --enable-deployments={{ .Values.workloads.deployments }}
+            - --enable-statefulsets={{ .Values.workloads.statefulSets }}
+            - --enable-rollouts={{ .Values.workloads.argoRollouts }}
+            - --notify-events={{ join "," .Values.notifications.events }}
+            {{- if $slack.botDefaultChannel }}
+            - --slack-default-channel={{ $slack.botDefaultChannel }}
+            {{- end }}
+            {{- if $routesEnabled }}
+            - --notify-routes-file=/etc/memreload/routes/routes.json
+            {{- end }}
+            {{- if eq $ds.type "prometheus" }}
+            - --prometheus-url={{ $ds.prometheus.url }}
+            - --prometheus-query={{ $ds.prometheus.query }}
+            {{- end }}
+            {{- if $needDD }}
+            - --datadog-site={{ $ds.datadog.site }}
+            - --datadog-metric={{ $ds.datadog.metric }}
+            {{- end }}
+            {{- if .Values.profileCapture.enabled }}
+            - --profile-enabled=true
+            - --profile-sink={{ .Values.profileCapture.sink }}
+            - --profile-pprof-path={{ .Values.profileCapture.pprofPath }}
+            - --profile-pprof-port={{ .Values.profileCapture.pprofPort }}
+            - --profile-timeout={{ .Values.profileCapture.timeout }}
+            - --profile-objectstore-provider={{ .Values.profileCapture.objectStore.provider }}
+            - --profile-objectstore-bucket={{ .Values.profileCapture.objectStore.bucket }}
+            - --profile-objectstore-prefix={{ .Values.profileCapture.objectStore.prefix }}
+            - --profile-objectstore-region={{ .Values.profileCapture.objectStore.region }}
+            - --profile-volume-dir={{ .Values.profileCapture.volume.mountPath }}
+            {{- end }}
+            {{- range .Values.maintenanceWindows }}
+            - --maintenance-window={{ printf "%s %s-%s %s" .days .start .end (.timezone | default "UTC") }}
+            {{- end }}
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            {{- if $needDD }}
+            - name: DD_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $ddSecret }}
+                  key: {{ $ddApiKeyKey }}
+            - name: DD_APP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $ddSecret }}
+                  key: {{ $ddAppKeyKey }}
+            {{- end }}
+            {{- if and (eq $ds.type "prometheus") (or $ds.prometheus.token $ds.prometheus.existingSecret.name) }}
+            - name: PROM_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $promSecret }}
+                  key: {{ $promTokenKey }}
+            {{- end }}
+            {{- if $slack.enabled }}
+            {{- if or $slack.botToken $slack.existingSecret.name }}
+            - name: SLACK_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $slackSecret }}
+                  key: {{ $slackBotKey }}
+            {{- else if $slack.webhookUrl }}
+            - name: SLACK_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $slackSecret }}
+                  key: {{ $slackWebhookKey }}
+            {{- end }}
+            {{- end }}
+            {{- if $webhook.enabled }}
+            - name: WEBHOOK_URL
+              value: {{ $webhook.url | quote }}
+            {{- if $webhook.authHeaderSecret.name }}
+            - name: WEBHOOK_AUTH_HEADER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $webhook.authHeaderSecret.name }}
+                  key: {{ $webhook.authHeaderSecret.key }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.notifications.datadogEvent.enabled }}
+            - name: DATADOG_EVENT_ENABLED
+              value: "true"
+            {{- end }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.metrics.service.port }}
+            - name: probe
+              containerPort: 8081
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: probe
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: probe
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          {{- $profileVol := and .Values.profileCapture.enabled (eq .Values.profileCapture.sink "volume") }}
+          {{- if or $profileVol $routesEnabled }}
+          volumeMounts:
+            {{- if $profileVol }}
+            - name: profiles
+              mountPath: {{ .Values.profileCapture.volume.mountPath }}
+            {{- end }}
+            {{- if $routesEnabled }}
+            - name: notify-routes
+              mountPath: /etc/memreload/routes
+              readOnly: true
+            {{- end }}
+          {{- end }}
+      {{- $profileVol := and .Values.profileCapture.enabled (eq .Values.profileCapture.sink "volume") }}
+      {{- if or $profileVol $routesEnabled }}
+      volumes:
+        {{- if $profileVol }}
+        - name: profiles
+          emptyDir: {}
+        {{- end }}
+        {{- if $routesEnabled }}
+        - name: notify-routes
+          secret:
+            secretName: {{ include "memreload.effectiveRoutesSecret" . }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

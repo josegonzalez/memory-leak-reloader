@@ -1,0 +1,144 @@
+image:
+  # Published to the GitHub Container Registry (ghcr.io/<owner>/<repo>).
+  repository: ghcr.io/josegonzalez/memory-leak-reloader
+  tag: ""            # defaults to chart appVersion
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+replicaCount: 2       # 2+ only meaningful with leaderElection.enabled
+
+crds:
+  install: true       # install the MemoryLeakPolicy CRD (set false if managed out-of-band)
+
+scope:
+  mode: cluster       # cluster | namespaces | single
+  namespaces: []      # required when mode != cluster; drives which namespaces' policies
+                      # are watched and Role vs ClusterRole
+
+dryRun: true          # default: log "would trigger", take no action. Set false to enforce restarts.
+
+log:
+  format: json        # logfmt (local) | json (Datadog)
+  level: info
+
+detection:
+  mode: sustained     # sustained | trend | combined
+  thresholdPercent: 85
+  window: 10m
+  sampleInterval: 30s
+  trendMinGrowth: 100Mi
+  startupGracePeriod: 5m
+
+rollout:
+  cooldown: 30m
+  globalMaxConcurrent: 1
+  maxRestartsPerWindow: 3
+  restartWindow: 24h
+  inflightTimeout: 15m
+  requeueAfter: 30s
+
+# Allowed restart windows; empty = always allowed. Each item:
+#   { days: Mon-Fri, start: "09:00", end: "17:00", timezone: America/New_York }
+maintenanceWindows: []
+
+profileCapture:
+  enabled: false
+  pprofPath: /debug/pprof/heap
+  pprofPort: 6060
+  timeout: 10s
+  sink: objectstore      # objectstore | volume | log
+  objectStore:           # used when sink=objectstore
+    provider: s3         # s3 | gcs | azblob
+    bucket: ""
+    prefix: memreload-profiles/
+    region: ""
+  volume:                # used when sink=volume
+    mountPath: /var/run/memreload/profiles
+
+notifications:
+  events: [RestartTriggered, CircuitBreakerTripped]   # also: RestartDeferred
+  slack:
+    enabled: false
+    # Bot-token mode enables per-pod channel override via memreload.io/slack-channel.
+    botToken: ""                            # inline -> chart Secret -> SLACK_BOT_TOKEN env
+    botDefaultChannel: ""                   # channel used when a pod sets none
+    # Incoming-webhook mode (fixed channel, no per-pod override). Bot token wins if both set.
+    webhookUrl: ""                          # inline -> chart Secret
+    # Reference an existing Secret instead of inline (takes precedence):
+    existingSecret: { name: "", botTokenKey: bot-token, webhookKey: webhook-url }
+  webhook:
+    enabled: false
+    url: ""
+    authHeaderSecret: { name: "", key: "" } # optional -> Authorization header
+  datadogEvent:
+    enabled: false        # reuses datasource.datadog credentials/site
+  # Named routes for per-pod targeting via memreload.io/notify-routes. URLs/auth are sensitive and
+  # are rendered into a mounted <release>-notify-routes Secret (routes.json), or reference an existing
+  # Secret. Pods reference routes by non-secret name only.
+  # type may be omitted (or "auto") to infer from the URL: a hooks.slack.com host
+  # becomes slack-webhook (Block Kit), anything else a generic webhook. Explicit type wins.
+  routes: []
+    # - { name: team-payments, url: "https://...", authHeader: "Bearer x" }   # auto -> webhook
+    # - { name: sre-slack, url: "https://hooks.slack.com/services/..." }       # auto -> slack-webhook
+    # - { name: forced, type: webhook, url: "https://hooks.slack.com/..." }    # explicit override
+  routesExistingSecret: ""   # name of an existing Secret holding key routes.json (instead of inline routes)
+
+workloads:            # which owner kinds are eligible
+  deployments: true
+  statefulSets: true
+  argoRollouts: true  # auto-disabled at startup if the argoproj.io Rollout CRD isn't installed
+
+datasource:
+  type: metrics-server        # metrics-server | prometheus | datadog (no fallback)
+  prometheus:
+    url: ""
+    query: container_memory_working_set_bytes
+    token: ""                 # (A) inline bearer token -> chart creates Secret
+    existingSecret: { name: "", tokenKey: token }   # (B) reference existing; takes precedence
+  datadog:
+    site: datadoghq.com
+    metric: kubernetes.memory.working_set
+    apiKey: ""                # (A) inline -> chart creates Secret <release>-datadog
+    appKey: ""
+    existingSecret: { name: "", apiKeyKey: api-key, appKeyKey: app-key }  # (B) reference existing
+
+metrics:
+  enabled: true
+  bindAddress: ":8080"
+  service: { enabled: true, port: 8080 }
+  serviceMonitor: { enabled: false }   # Prometheus Operator scraping
+  prometheusRule: { enabled: false }   # ships alert rules
+
+leaderElection:
+  enabled: true
+  id: memory-leak-reloader
+
+rbac:
+  create: true
+
+serviceAccount:
+  create: true
+  name: ""             # set explicitly when using EKS Pod Identity
+  annotations: {}     # e.g. IRSA (eks.amazonaws.com/role-arn) / GKE WI / Azure WI
+
+healthProbeBindAddress: ":8081"
+
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits: { memory: 256Mi }
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]

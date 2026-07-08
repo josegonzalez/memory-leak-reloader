@@ -1,0 +1,36 @@
+# Standalone PrometheusRule for non-Helm users. The Helm chart renders an
+# equivalent rule when metrics.prometheusRule.enabled=true.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: memory-leak-reloader
+  labels:
+    app.kubernetes.io/name: memory-leak-reloader
+spec:
+  groups:
+    - name: memory-leak-reloader
+      rules:
+        - alert: MemreloadCircuitBreakerTripping
+          expr: increase(memreload_rollouts_skipped_total{reason="circuit_breaker"}[1h]) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: memory-leak-reloader circuit breaker tripping
+            description: A workload hit its max restarts per window; investigate the leak instead of relying on restarts.
+        - alert: MemreloadDatasourceErrors
+          expr: increase(memreload_datasource_errors_total[15m]) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: memory-leak-reloader datasource errors
+            description: The controller is failing to query its memory datasource; detection is degraded.
+        - alert: MemreloadInflightSaturated
+          expr: memreload_inflight_rollouts >= memreload_global_cap and memreload_global_cap > 0
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: memory-leak-reloader at concurrency cap
+            description: In-flight rollouts have been at the global cap for 30m; a rollout may be stuck.

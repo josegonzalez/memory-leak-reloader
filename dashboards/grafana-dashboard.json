@@ -1,0 +1,77 @@
+{
+  "title": "memory-leak-reloader",
+  "uid": "memreload",
+  "schemaVersion": 39,
+  "timezone": "",
+  "editable": true,
+  "tags": ["memory-leak-reloader"],
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "title": "Monitored pods",
+      "type": "stat",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "targets": [{ "expr": "memreload_pods_monitored", "legendFormat": "pods" }]
+    },
+    {
+      "title": "In-flight rollouts vs cap",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 6, "w": 9, "x": 6, "y": 0 },
+      "targets": [
+        { "expr": "memreload_inflight_rollouts", "legendFormat": "in-flight" },
+        { "expr": "memreload_global_cap", "legendFormat": "cap" }
+      ]
+    },
+    {
+      "title": "Sample buffer series",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 6, "w": 9, "x": 15, "y": 0 },
+      "targets": [{ "expr": "memreload_sample_buffer_series", "legendFormat": "series" }]
+    },
+    {
+      "title": "Threshold breaches by mode",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 6 },
+      "targets": [{ "expr": "sum by (mode) (rate(memreload_threshold_breaches_total[5m]))", "legendFormat": "{{mode}}" }]
+    },
+    {
+      "title": "Rollouts triggered by kind/result",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 6 },
+      "targets": [{ "expr": "sum by (workload_kind,result) (rate(memreload_rollouts_triggered_total[5m]))", "legendFormat": "{{workload_kind}}/{{result}}" }]
+    },
+    {
+      "title": "Rollouts skipped by reason",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 13 },
+      "targets": [{ "expr": "sum by (reason) (rate(memreload_rollouts_skipped_total[5m]))", "legendFormat": "{{reason}}" }]
+    },
+    {
+      "title": "Datasource errors / Profile captures / Notifications",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 13 },
+      "targets": [
+        { "expr": "sum by (source) (rate(memreload_datasource_errors_total[5m]))", "legendFormat": "ds-error {{source}}" },
+        { "expr": "sum by (result) (rate(memreload_profile_captures_total[5m]))", "legendFormat": "profile {{result}}" },
+        { "expr": "sum by (sink,result) (rate(memreload_notifications_total[5m]))", "legendFormat": "notify {{sink}}/{{result}}" }
+      ]
+    }
+  ]
+}

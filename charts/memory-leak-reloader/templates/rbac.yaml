@@ -1,0 +1,95 @@
+{{- if .Values.rbac.create -}}
+{{- $clusterScoped := eq (include "memreload.clusterScoped" .) "true" -}}
+{{- $fullname := include "memreload.fullname" . -}}
+{{- $sa := include "memreload.serviceAccountName" . -}}
+{{- $ns := .Release.Namespace -}}
+{{- if $clusterScoped }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "memreload.labels" . | nindent 4 }}
+rules:
+{{ include "memreload.rules" . }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "memreload.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $fullname }}
+subjects:
+- kind: ServiceAccount
+  name: {{ $sa }}
+  namespace: {{ $ns }}
+{{- else }}
+{{- range concat .Values.scope.namespaces (list $ns) | uniq }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $fullname }}
+  namespace: {{ . }}
+  labels:
+    {{- include "memreload.labels" $ | nindent 4 }}
+rules:
+{{ include "memreload.rules" $ }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $fullname }}
+  namespace: {{ . }}
+  labels:
+    {{- include "memreload.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $fullname }}
+subjects:
+- kind: ServiceAccount
+  name: {{ $sa }}
+  namespace: {{ $ns }}
+{{- end }}
+{{- end }}
+
+{{- if .Values.leaderElection.enabled }}
+---
+# Leader-election lease lives in the controller's own namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $fullname }}-leaderelection
+  namespace: {{ $ns }}
+  labels:
+    {{- include "memreload.labels" . | nindent 4 }}
+rules:
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["", "events.k8s.io"]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $fullname }}-leaderelection
+  namespace: {{ $ns }}
+  labels:
+    {{- include "memreload.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $fullname }}-leaderelection
+subjects:
+- kind: ServiceAccount
+  name: {{ $sa }}
+  namespace: {{ $ns }}
+{{- end }}
+{{- end }}

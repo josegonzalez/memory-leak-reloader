@@ -1,0 +1,7 @@
+# Build output
+/bin/
+/manager
+
+# Local temp and e2e artifacts (kubeconfigs, logs)
+/tmp/
+test/e2e/tmp/

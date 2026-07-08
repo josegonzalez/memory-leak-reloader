@@ -1,0 +1,24 @@
+# Sample MemoryLeakPolicy: opt the "api" Deployment into memory-leak detection
+# with combined-mode tuning. All fields except workloadRef are optional and
+# inherit the controller defaults (Helm values / flags) when unset.
+apiVersion: memreload.io/v1alpha1
+kind: MemoryLeakPolicy
+metadata:
+  name: api
+  namespace: payments
+spec:
+  workloadRef:
+    kind: Deployment
+    name: api
+  detection:
+    mode: combined
+    thresholdPercent: 80
+    window: 15m
+    trendMinGrowth: 200Mi
+  containers: ["app"]
+  cooldown: 30m
+  maintenanceWindows:
+    - days: [Mon, Tue, Wed, Thu, Fri]
+      start: "09:00"
+      end: "17:00"
+      timezone: America/New_York

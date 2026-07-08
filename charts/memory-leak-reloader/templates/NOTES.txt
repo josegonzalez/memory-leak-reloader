@@ -1,0 +1,29 @@
+memory-leak-reloader installed as {{ include "memreload.fullname" . }} in namespace {{ .Release.Namespace }}.
+
+Scope:        {{ .Values.scope.mode }}
+Datasource:   {{ .Values.datasource.type }}
+Detection:    mode={{ .Values.detection.mode }} threshold={{ .Values.detection.thresholdPercent }}% window={{ .Values.detection.window }}
+Dry-run:      {{ .Values.dryRun }}
+
+{{ if .Values.dryRun -}}
+Running in DRY-RUN: the controller will log "would restart" but take no action.
+Watch the logs, then re-install with --set dryRun=false to enforce.
+{{- else -}}
+Enforcing: workloads with a MemoryLeakPolicy will be rollout-restarted when leaking
+(subject to cooldown, maintenance windows, and the global concurrency cap).
+{{- end }}
+
+Opt a workload in by creating a MemoryLeakPolicy that references it:
+  apiVersion: memreload.io/v1alpha1
+  kind: MemoryLeakPolicy
+  metadata:
+    name: api
+    namespace: <ns>
+  spec:
+    workloadRef:
+      kind: Deployment
+      name: api
+
+Inspect state with:  kubectl -n <ns> get mlp
+
+Metrics: {{ if .Values.metrics.enabled }}exposed on {{ .Values.metrics.bindAddress }}{{ else }}disabled{{ end }}

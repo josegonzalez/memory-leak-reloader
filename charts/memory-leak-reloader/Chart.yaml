@@ -1,0 +1,17 @@
+apiVersion: v2
+name: memory-leak-reloader
+description: A Kubernetes controller that detects per-container memory leaks in opted-in pods and triggers a safe rollout restart of the owning workload.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - memory
+  - leak
+  - rollout
+  - restart
+  - controller
+home: https://github.com/josegonzalez/memory-leak-reloader
+sources:
+  - https://github.com/josegonzalez/memory-leak-reloader
+maintainers:
+  - name: josegonzalez

@@ -1,0 +1,97 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+          cache: true
+      - name: Vet
+        run: go vet ./...
+      - name: Unit tests (race)
+        run: go test ./... -race -count=1
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+          cache: true
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+      - name: Set up Helm
+        uses: azure/setup-helm@v5
+      - name: Helm lint + template
+        run: |
+          helm lint charts/memory-leak-reloader
+          helm template m charts/memory-leak-reloader >/dev/null
+          helm template m charts/memory-leak-reloader \
+            --set metrics.prometheusRule.enabled=true \
+            --set validation.admissionPolicy.enabled=true >/dev/null
+      - name: Validate dashboard JSON
+        run: |
+          for f in dashboards/*.json; do
+            python3 -c "import json,sys; json.load(open('$f'))" && echo "$f OK"
+          done
+      - name: Lint docs (markdown)
+        run: |
+          pipx run pymarkdownlnt scan docs README.md || true
+
+  # Build each architecture natively on its own runner: the Go binary is
+  # compiled on the host (with a persisted module/build cache) and copied into
+  # the image, so there is no QEMU emulation and no cold in-image recompile.
+  docker-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+          cache: true
+      - name: Build manager binary (native)
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.arch }} go build -trimpath -ldflags="-s -w" -o manager ./cmd
+      - name: Build image (no push)
+        run: docker build --build-arg BIN_SOURCE=prebuilt -t memory-leak-reloader:ci .
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+          cache: true
+      - name: Set up Helm
+        uses: azure/setup-helm@v5
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v5
+      - name: Install kind
+        uses: helm/kind-action@v1
+        with:
+          install_only: true
+      - name: e2e (kind)
+        run: make e2e
