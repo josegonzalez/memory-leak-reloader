@@ -1,13 +1,19 @@
 {
   "title": "memory-leak-reloader",
-  "description": "Monitoring for the memory-leak-reloader controller: monitored pods, breaches, rollouts, concurrency, profile captures, datasource health, and notifications.",
+  "description": "Monitoring for the memory-leak-reloader controller: monitored pods, policies, breaches, rollouts, concurrency, profile captures, datasource health, and notifications.",
   "layout_type": "ordered",
   "reflow_type": "auto",
+  "template_variables": [
+    { "name": "cluster", "prefix": "kube_cluster_name", "available_values": [], "default": "*" },
+    { "name": "namespace", "prefix": "workload_namespace", "available_values": [], "default": "*" },
+    { "name": "kind", "prefix": "workload_kind", "available_values": [], "default": "*" },
+    { "name": "workload", "prefix": "workload_name", "available_values": [], "default": "*" }
+  ],
   "widgets": [
     {
       "definition": {
         "type": "note",
-        "content": "memory-leak-reloader exposes Prometheus metrics scraped into Datadog with the `memreload_` prefix. A policy in dry-run shows as `memreload_policy_dryrun{namespace,name}=1`.",
+        "content": "memory-leak-reloader exposes Prometheus metrics scraped into Datadog with the `memreload_` prefix. The `workload_namespace`, `workload_kind`, and `workload_name` filters use app-emitted labels describing the target workload (not the operator pod); `cluster` uses the Datadog agent's `kube_cluster_name` tag. Configured policies are exported as `memreload_policies{workload_namespace,dry_run}`.",
         "background_color": "blue",
         "font_size": "14",
         "text_align": "left"
@@ -17,7 +23,24 @@
       "definition": {
         "title": "Monitored pods",
         "type": "query_value",
-        "requests": [{ "q": "avg:memreload_pods_monitored{*}", "aggregator": "last" }]
+        "requests": [{ "q": "sum:memreload_pods_monitored{$cluster,$namespace,$kind,$workload}", "aggregator": "last" }]
+      }
+    },
+    {
+      "definition": {
+        "title": "Configured policies",
+        "type": "timeseries",
+        "requests": [{ "q": "sum:memreload_policies{$cluster,$namespace} by {dry_run}", "display_type": "line" }]
+      }
+    },
+    {
+      "definition": {
+        "title": "Operator pods running",
+        "type": "timeseries",
+        "requests": [
+          { "q": "sum:kubernetes_state.deployment.replicas_available{$cluster,kube_deployment:*memory-leak-reloader*}", "display_type": "line" },
+          { "q": "sum:kubernetes_state.deployment.replicas_desired{$cluster,kube_deployment:*memory-leak-reloader*}", "display_type": "line", "style": { "line_type": "dashed" } }
+        ]
       }
     },
     {
@@ -25,8 +48,8 @@
         "title": "In-flight rollouts vs cap",
         "type": "timeseries",
         "requests": [
-          { "q": "avg:memreload_inflight_rollouts{*}", "display_type": "bars" },
-          { "q": "avg:memreload_global_cap{*}", "display_type": "line" }
+          { "q": "avg:memreload_inflight_rollouts{$cluster}", "display_type": "bars" },
+          { "q": "avg:memreload_global_cap{$cluster}", "display_type": "line" }
         ]
       }
     },
@@ -34,63 +57,63 @@
       "definition": {
         "title": "Threshold breaches by mode",
         "type": "timeseries",
-        "requests": [{ "q": "sum:memreload_threshold_breaches_total{*} by {mode}.as_count()", "display_type": "bars" }]
+        "requests": [{ "q": "sum:memreload_threshold_breaches_total{$cluster,$namespace,$kind,$workload} by {mode}.as_count()", "display_type": "bars" }]
       }
     },
     {
       "definition": {
         "title": "Rollouts triggered by kind/result",
         "type": "timeseries",
-        "requests": [{ "q": "sum:memreload_rollouts_triggered_total{*} by {workload_kind,result}.as_count()", "display_type": "bars" }]
+        "requests": [{ "q": "sum:memreload_rollouts_triggered_total{$cluster,$namespace,$kind,$workload} by {workload_kind,result}.as_count()", "display_type": "bars" }]
       }
     },
     {
       "definition": {
         "title": "Rollouts skipped by reason",
         "type": "timeseries",
-        "requests": [{ "q": "sum:memreload_rollouts_skipped_total{*} by {reason}.as_count()", "display_type": "bars" }]
+        "requests": [{ "q": "sum:memreload_rollouts_skipped_total{$cluster,$namespace,$kind,$workload} by {reason}.as_count()", "display_type": "bars" }]
       }
     },
     {
       "definition": {
         "title": "Rollouts deferred (maintenance window)",
         "type": "timeseries",
-        "requests": [{ "q": "sum:memreload_rollouts_deferred_total{*}.as_count()", "display_type": "bars" }]
+        "requests": [{ "q": "sum:memreload_rollouts_deferred_total{$cluster,$namespace,$kind,$workload}.as_count()", "display_type": "bars" }]
       }
     },
     {
       "definition": {
         "title": "Sample buffer series (cardinality)",
         "type": "timeseries",
-        "requests": [{ "q": "avg:memreload_sample_buffer_series{*}", "display_type": "line" }]
+        "requests": [{ "q": "avg:memreload_sample_buffer_series{$cluster}", "display_type": "line" }]
       }
     },
     {
       "definition": {
         "title": "Containers ignored (no limit)",
         "type": "timeseries",
-        "requests": [{ "q": "avg:memreload_containers_ignored{*} by {reason}", "display_type": "line" }]
+        "requests": [{ "q": "sum:memreload_containers_ignored{$cluster,$namespace,$kind,$workload} by {reason}", "display_type": "line" }]
       }
     },
     {
       "definition": {
         "title": "Datasource errors",
         "type": "timeseries",
-        "requests": [{ "q": "sum:memreload_datasource_errors_total{*} by {source}.as_count()", "display_type": "bars" }]
+        "requests": [{ "q": "sum:memreload_datasource_errors_total{$cluster} by {source}.as_count()", "display_type": "bars" }]
       }
     },
     {
       "definition": {
         "title": "Profile captures by result",
         "type": "timeseries",
-        "requests": [{ "q": "sum:memreload_profile_captures_total{*} by {result}.as_count()", "display_type": "bars" }]
+        "requests": [{ "q": "sum:memreload_profile_captures_total{$cluster,$namespace,$kind,$workload} by {result}.as_count()", "display_type": "bars" }]
       }
     },
     {
       "definition": {
         "title": "Notifications by sink/result",
         "type": "timeseries",
-        "requests": [{ "q": "sum:memreload_notifications_total{*} by {sink,result}.as_count()", "display_type": "bars" }]
+        "requests": [{ "q": "sum:memreload_notifications_total{$cluster,$namespace,$kind,$workload} by {sink,result}.as_count()", "display_type": "bars" }]
       }
     }
   ]

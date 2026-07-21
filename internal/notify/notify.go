@@ -121,7 +121,7 @@ func (n *Notifier) Notify(ctx context.Context, e Event) {
 		if err != nil {
 			result = "error"
 		}
-		metrics.Notifications.WithLabelValues(s.Name(), result).Inc()
+		metrics.Notifications.WithLabelValues(e.Namespace, e.Kind, e.Workload, s.Name(), result).Inc()
 	}
 }
 
