@@ -17,7 +17,8 @@ The controller ships in dry-run by default - it logs what it would restart but
 takes no action until you set `dryRun=false`.
 
 ```sh
-helm install memreload ./charts/memory-leak-reloader \
+helm repo add memreload https://josediazgonzalez.com/memory-leak-reloader
+helm install memreload memreload/memory-leak-reloader \
   --namespace memreload-system --create-namespace
 ```
 

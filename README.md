@@ -37,7 +37,8 @@ The controller ships in **dry-run by default** - it samples, evaluates, emits
 configured) but takes no action until you opt into enforcement.
 
 ```sh
-helm install memreload ./charts/memory-leak-reloader \
+helm repo add memreload https://josediazgonzalez.com/memory-leak-reloader
+helm install memreload memreload/memory-leak-reloader \
   --namespace memreload-system --create-namespace \
   --set scope.mode=single --set 'scope.namespaces={payments}'
 ```
@@ -45,7 +46,7 @@ helm install memreload ./charts/memory-leak-reloader \
 Watch for `WouldRestart` log lines / Events, then enforce:
 
 ```sh
-helm upgrade memreload ./charts/memory-leak-reloader \
+helm upgrade memreload memreload/memory-leak-reloader \
   --namespace memreload-system --reuse-values --set dryRun=false
 ```
 
