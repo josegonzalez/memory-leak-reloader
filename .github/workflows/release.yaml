@@ -104,7 +104,10 @@ jobs:
             .cr-release-packages/*
 
       - name: Update helm repo index
-        uses: helm/chart-releaser-action@v1
+        # Pinned to main: no tagged release includes the fix for
+        # `latest_tag: unbound variable` with skip_packaging
+        # (helm/chart-releaser-action#202)
+        uses: helm/chart-releaser-action@3e001cb8c68933439c7e721650f20a07a1a5c61e
         with:
           skip_packaging: true
           skip_existing: true
