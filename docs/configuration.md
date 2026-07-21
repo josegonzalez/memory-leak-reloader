@@ -33,8 +33,8 @@ inherits the default.
 All fields except `workloadRef` are optional. `dryRun` is the one field with an
 API-server default (`true`) rather than a controller default: enforcement is
 opt-in per policy and there is no controller-wide switch. The effective mode is
-exported as `memreload_policy_dryrun{namespace,name}` and shown in the `DRY-RUN`
-column of `kubectl get mlp`. The spec is schema-validated
+shown in the `DRY-RUN` column of `kubectl get mlp` and counted in aggregate by
+the `memreload_policies{workload_namespace,dry_run}` gauge. The spec is schema-validated
 (enums, ranges, patterns) by the CRD's OpenAPI schema plus CEL rules, so
 malformed values are rejected at apply time rather than surfaced as runtime
 Events.

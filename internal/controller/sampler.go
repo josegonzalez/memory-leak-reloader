@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -82,10 +83,16 @@ func (s *Sampler) sampleOnce(ctx context.Context, log logr.Logger) {
 
 	now := s.Clock.Now()
 	live := make(map[sampling.Key]struct{})
-	ignored := 0
-	monitored := 0
+	type wlKey struct{ ns, kind, name string }
+	type policyKey struct{ ns, dryRun string }
+	ignored := make(map[wlKey]int)
+	monitored := make(map[wlKey]int)
+	policyCounts := make(map[policyKey]int)
 	for i := range policies {
 		p := &policies[i]
+		podCfg := config.ResolvePolicy(s.Defaults, p.Spec)
+		policyCounts[policyKey{p.Namespace, strconv.FormatBool(podCfg.DryRun)}]++
+		wkey := wlKey{p.Namespace, p.Spec.WorkloadRef.Kind, p.Spec.WorkloadRef.Name}
 		wl, err := restart.GetWorkload(ctx, s.Client, restart.Kind(p.Spec.WorkloadRef.Kind), p.Namespace, p.Spec.WorkloadRef.Name)
 		if err != nil {
 			if !apierrors.IsNotFound(err) {
@@ -98,13 +105,12 @@ func (s *Sampler) sampleOnce(ctx context.Context, log logr.Logger) {
 			log.Error(err, "list workload pods", "policy", p.Name, "namespace", p.Namespace)
 			continue
 		}
-		podCfg := config.ResolvePolicy(s.Defaults, p.Spec)
 		enqueue := false
 		for j := range pods {
 			pod := &pods[j]
-			monitored++
+			monitored[wkey]++
 			targets, dropped := SelectTargets(pod, podCfg)
-			ignored += dropped
+			ignored[wkey] += dropped
 			for _, tg := range targets {
 				key := sampling.Key{Namespace: pod.Namespace, Pod: pod.Name, Container: tg.Name}
 				ws, ok := byKey[key]
@@ -123,10 +129,24 @@ func (s *Sampler) sampleOnce(ctx context.Context, log logr.Logger) {
 		}
 	}
 
-	metrics.PodsMonitored.Set(float64(monitored))
+	// Reset-then-set: the sampler wholly owns these gauge families, so a full
+	// rewrite each tick drops series for deleted policies and workloads. A scrape
+	// landing between Reset and Set can observe a momentarily empty family, which
+	// is acceptable for gauges refreshed every interval.
+	metrics.PodsMonitored.Reset()
+	for k, n := range monitored {
+		metrics.PodsMonitored.WithLabelValues(k.ns, k.kind, k.name).Set(float64(n))
+	}
+	metrics.ContainersIgnored.Reset()
+	for k, n := range ignored {
+		metrics.ContainersIgnored.WithLabelValues(k.ns, k.kind, k.name, "no_limit").Set(float64(n))
+	}
+	metrics.Policies.Reset()
+	for k, n := range policyCounts {
+		metrics.Policies.WithLabelValues(k.ns, k.dryRun).Set(float64(n))
+	}
 	kept := s.Store.Prune(live)
 	metrics.SampleBufferSeries.Set(float64(kept))
-	metrics.ContainersIgnored.WithLabelValues("no_limit").Set(float64(ignored))
 }
 
 // listPolicies returns the MemoryLeakPolicy objects within scope.

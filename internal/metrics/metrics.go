@@ -7,53 +7,53 @@ package metrics
 import "github.com/prometheus/client_golang/prometheus"
 
 var (
-	// PodsMonitored is the number of opted-in, monitorable pods.
-	PodsMonitored = prometheus.NewGauge(prometheus.GaugeOpts{
+	// PodsMonitored is the number of opted-in, monitorable pods per workload.
+	PodsMonitored = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "memreload_pods_monitored",
-		Help: "Number of opted-in pods currently being monitored.",
-	})
+		Help: "Number of opted-in pods currently being monitored, by workload.",
+	}, []string{"workload_namespace", "workload_kind", "workload_name"})
 
-	// ThresholdBreaches counts detected leak conditions by detection mode.
+	// ThresholdBreaches counts detected leak conditions by workload and detection mode.
 	ThresholdBreaches = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "memreload_threshold_breaches_total",
-		Help: "Total leak conditions detected, by detection mode.",
-	}, []string{"mode"})
+		Help: "Total leak conditions detected, by workload and detection mode.",
+	}, []string{"workload_namespace", "workload_kind", "workload_name", "mode"})
 
-	// RolloutsTriggered counts dispatched restarts by workload kind and result.
+	// RolloutsTriggered counts dispatched restarts by workload and result.
 	RolloutsTriggered = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "memreload_rollouts_triggered_total",
-		Help: "Total rollout restarts triggered, by workload kind and result.",
-	}, []string{"workload_kind", "result"})
+		Help: "Total rollout restarts triggered, by workload and result.",
+	}, []string{"workload_namespace", "workload_kind", "workload_name", "result"})
 
-	// RolloutsSkipped counts restarts that were gated out, by reason.
+	// RolloutsSkipped counts restarts that were gated out, by workload and reason.
 	RolloutsSkipped = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "memreload_rollouts_skipped_total",
-		Help: "Total restarts skipped, by reason (in_progress, cooldown, cap, not_ready, old_revision, dry_run, circuit_breaker, superseded).",
-	}, []string{"reason"})
+		Help: "Total restarts skipped, by workload and reason (in_progress, cooldown, cap, not_ready, old_revision, dry_run, circuit_breaker, superseded).",
+	}, []string{"workload_namespace", "workload_kind", "workload_name", "reason"})
 
 	// RolloutsDeferred counts restarts deferred by a closed maintenance window.
-	RolloutsDeferred = prometheus.NewCounter(prometheus.CounterOpts{
+	RolloutsDeferred = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "memreload_rollouts_deferred_total",
-		Help: "Total restarts deferred because the maintenance window was closed.",
-	})
+		Help: "Total restarts deferred because the maintenance window was closed, by workload.",
+	}, []string{"workload_namespace", "workload_kind", "workload_name"})
 
-	// ProfileCaptures counts pre-restart profile capture attempts by result.
+	// ProfileCaptures counts pre-restart profile capture attempts by workload and result.
 	ProfileCaptures = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "memreload_profile_captures_total",
-		Help: "Total pre-restart profile captures, by result (success, error, skipped).",
-	}, []string{"result"})
+		Help: "Total pre-restart profile captures, by workload and result (success, error, skipped).",
+	}, []string{"workload_namespace", "workload_kind", "workload_name", "result"})
 
-	// Notifications counts notification deliveries by sink and result.
+	// Notifications counts notification deliveries by workload, sink, and result.
 	Notifications = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "memreload_notifications_total",
-		Help: "Total notification deliveries, by sink and result.",
-	}, []string{"sink", "result"})
+		Help: "Total notification deliveries, by workload, sink, and result.",
+	}, []string{"workload_namespace", "workload_kind", "workload_name", "sink", "result"})
 
-	// ContainersIgnored is the number of watched containers ignored, by reason.
+	// ContainersIgnored is the number of watched containers ignored, by workload and reason.
 	ContainersIgnored = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "memreload_containers_ignored",
-		Help: "Number of watched containers ignored, by reason (e.g. no_limit).",
-	}, []string{"reason"})
+		Help: "Number of watched containers ignored, by workload and reason (e.g. no_limit).",
+	}, []string{"workload_namespace", "workload_kind", "workload_name", "reason"})
 
 	// InflightRollouts is the number of restarts currently in flight.
 	InflightRollouts = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -79,11 +79,12 @@ var (
 		Help: "Total datasource errors, by source.",
 	}, []string{"source"})
 
-	// PolicyDryRun is 1 when the effective mode for a MemoryLeakPolicy is dry-run.
-	PolicyDryRun = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "memreload_policy_dryrun",
-		Help: "1 if the effective mode for a MemoryLeakPolicy is dry-run, else 0.",
-	}, []string{"namespace", "name"})
+	// Policies is the number of MemoryLeakPolicy objects in scope, by workload
+	// namespace and effective dry-run mode.
+	Policies = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "memreload_policies",
+		Help: "Number of configured MemoryLeakPolicy objects, by workload namespace and effective dry_run mode.",
+	}, []string{"workload_namespace", "dry_run"})
 )
 
 // collectors lists every collector for bulk registration.
@@ -91,7 +92,7 @@ func collectors() []prometheus.Collector {
 	return []prometheus.Collector{
 		PodsMonitored, ThresholdBreaches, RolloutsTriggered, RolloutsSkipped,
 		RolloutsDeferred, ProfileCaptures, Notifications, ContainersIgnored,
-		InflightRollouts, GlobalCap, SampleBufferSeries, DatasourceErrors, PolicyDryRun,
+		InflightRollouts, GlobalCap, SampleBufferSeries, DatasourceErrors, Policies,
 	}
 }
 

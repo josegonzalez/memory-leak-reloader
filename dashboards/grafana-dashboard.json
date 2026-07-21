@@ -13,6 +13,50 @@
         "type": "datasource",
         "query": "prometheus",
         "current": {}
+      },
+      {
+        "name": "cluster",
+        "type": "query",
+        "datasource": "${datasource}",
+        "query": "label_values(memreload_pods_monitored, cluster)",
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "current": {}
+      },
+      {
+        "name": "namespace",
+        "type": "query",
+        "datasource": "${datasource}",
+        "query": "label_values(memreload_policies{cluster=~\"$cluster\"}, workload_namespace)",
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "current": {}
+      },
+      {
+        "name": "kind",
+        "type": "query",
+        "datasource": "${datasource}",
+        "query": "label_values(memreload_pods_monitored{cluster=~\"$cluster\", workload_namespace=~\"$namespace\"}, workload_kind)",
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "current": {}
+      },
+      {
+        "name": "workload",
+        "type": "query",
+        "datasource": "${datasource}",
+        "query": "label_values(memreload_pods_monitored{cluster=~\"$cluster\", workload_namespace=~\"$namespace\", workload_kind=~\"$kind\"}, workload_name)",
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "current": {}
       }
     ]
   },
@@ -22,7 +66,7 @@
       "type": "stat",
       "datasource": "${datasource}",
       "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
-      "targets": [{ "expr": "memreload_pods_monitored", "legendFormat": "pods" }]
+      "targets": [{ "expr": "sum(memreload_pods_monitored{cluster=~\"$cluster\", workload_namespace=~\"$namespace\", workload_kind=~\"$kind\", workload_name=~\"$workload\"})", "legendFormat": "pods" }]
     },
     {
       "title": "In-flight rollouts vs cap",
@@ -30,8 +74,8 @@
       "datasource": "${datasource}",
       "gridPos": { "h": 6, "w": 9, "x": 6, "y": 0 },
       "targets": [
-        { "expr": "memreload_inflight_rollouts", "legendFormat": "in-flight" },
-        { "expr": "memreload_global_cap", "legendFormat": "cap" }
+        { "expr": "memreload_inflight_rollouts{cluster=~\"$cluster\"}", "legendFormat": "in-flight" },
+        { "expr": "memreload_global_cap{cluster=~\"$cluster\"}", "legendFormat": "cap" }
       ]
     },
     {
@@ -39,28 +83,28 @@
       "type": "timeseries",
       "datasource": "${datasource}",
       "gridPos": { "h": 6, "w": 9, "x": 15, "y": 0 },
-      "targets": [{ "expr": "memreload_sample_buffer_series", "legendFormat": "series" }]
+      "targets": [{ "expr": "memreload_sample_buffer_series{cluster=~\"$cluster\"}", "legendFormat": "series" }]
     },
     {
       "title": "Threshold breaches by mode",
       "type": "timeseries",
       "datasource": "${datasource}",
       "gridPos": { "h": 7, "w": 12, "x": 0, "y": 6 },
-      "targets": [{ "expr": "sum by (mode) (rate(memreload_threshold_breaches_total[5m]))", "legendFormat": "{{mode}}" }]
+      "targets": [{ "expr": "sum by (mode) (rate(memreload_threshold_breaches_total{cluster=~\"$cluster\", workload_namespace=~\"$namespace\", workload_kind=~\"$kind\", workload_name=~\"$workload\"}[5m]))", "legendFormat": "{{mode}}" }]
     },
     {
       "title": "Rollouts triggered by kind/result",
       "type": "timeseries",
       "datasource": "${datasource}",
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 6 },
-      "targets": [{ "expr": "sum by (workload_kind,result) (rate(memreload_rollouts_triggered_total[5m]))", "legendFormat": "{{workload_kind}}/{{result}}" }]
+      "targets": [{ "expr": "sum by (workload_kind,result) (rate(memreload_rollouts_triggered_total{cluster=~\"$cluster\", workload_namespace=~\"$namespace\", workload_kind=~\"$kind\", workload_name=~\"$workload\"}[5m]))", "legendFormat": "{{workload_kind}}/{{result}}" }]
     },
     {
       "title": "Rollouts skipped by reason",
       "type": "timeseries",
       "datasource": "${datasource}",
       "gridPos": { "h": 7, "w": 12, "x": 0, "y": 13 },
-      "targets": [{ "expr": "sum by (reason) (rate(memreload_rollouts_skipped_total[5m]))", "legendFormat": "{{reason}}" }]
+      "targets": [{ "expr": "sum by (reason) (rate(memreload_rollouts_skipped_total{cluster=~\"$cluster\", workload_namespace=~\"$namespace\", workload_kind=~\"$kind\", workload_name=~\"$workload\"}[5m]))", "legendFormat": "{{reason}}" }]
     },
     {
       "title": "Datasource errors / Profile captures / Notifications",
@@ -68,9 +112,26 @@
       "datasource": "${datasource}",
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 13 },
       "targets": [
-        { "expr": "sum by (source) (rate(memreload_datasource_errors_total[5m]))", "legendFormat": "ds-error {{source}}" },
-        { "expr": "sum by (result) (rate(memreload_profile_captures_total[5m]))", "legendFormat": "profile {{result}}" },
-        { "expr": "sum by (sink,result) (rate(memreload_notifications_total[5m]))", "legendFormat": "notify {{sink}}/{{result}}" }
+        { "expr": "sum by (source) (rate(memreload_datasource_errors_total{cluster=~\"$cluster\"}[5m]))", "legendFormat": "ds-error {{source}}" },
+        { "expr": "sum by (result) (rate(memreload_profile_captures_total{cluster=~\"$cluster\", workload_namespace=~\"$namespace\", workload_kind=~\"$kind\", workload_name=~\"$workload\"}[5m]))", "legendFormat": "profile {{result}}" },
+        { "expr": "sum by (sink,result) (rate(memreload_notifications_total{cluster=~\"$cluster\", workload_namespace=~\"$namespace\", workload_kind=~\"$kind\", workload_name=~\"$workload\"}[5m]))", "legendFormat": "notify {{sink}}/{{result}}" }
+      ]
+    },
+    {
+      "title": "Configured policies",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 20 },
+      "targets": [{ "expr": "sum by (dry_run) (memreload_policies{cluster=~\"$cluster\", workload_namespace=~\"$namespace\"})", "legendFormat": "dry_run={{dry_run}}" }]
+    },
+    {
+      "title": "Operator pods running",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 20 },
+      "targets": [
+        { "expr": "sum(kube_deployment_status_replicas_available{deployment=~\".*memory-leak-reloader.*\", cluster=~\"$cluster\"})", "legendFormat": "available" },
+        { "expr": "sum(kube_deployment_spec_replicas{deployment=~\".*memory-leak-reloader.*\", cluster=~\"$cluster\"})", "legendFormat": "desired" }
       ]
     }
   ]

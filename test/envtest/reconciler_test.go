@@ -230,8 +230,11 @@ func TestReconcile_TriggersRestartOnLeak(t *testing.T) {
 	if st.DryRun {
 		t.Error("status.dryRun should be false for an enforcing policy")
 	}
-	if got := testutil.ToFloat64(metrics.PolicyDryRun.WithLabelValues(ns, "api")); got != 0 {
-		t.Errorf("policy dry-run gauge = %v want 0", got)
+	if got := testutil.ToFloat64(metrics.RolloutsTriggered.WithLabelValues(ns, "Deployment", "api", "success")); got != 1 {
+		t.Errorf("rollouts triggered success counter = %v want 1", got)
+	}
+	if got := testutil.ToFloat64(metrics.ThresholdBreaches.WithLabelValues(ns, "Deployment", "api", string(config.ModeSustained))); got != 1 {
+		t.Errorf("threshold breaches counter = %v want 1", got)
 	}
 }
 
@@ -280,10 +283,18 @@ func TestReconcile_DefaultsToDryRun(t *testing.T) {
 	if r.Gate.Holds("Deployment/" + ns + "/api") {
 		t.Error("dry-run must release the in-flight slot")
 	}
-	if got := testutil.ToFloat64(metrics.PolicyDryRun.WithLabelValues(ns, "api")); got != 1 {
-		t.Errorf("policy dry-run gauge = %v want 1", got)
+	if got := testutil.ToFloat64(metrics.RolloutsTriggered.WithLabelValues(ns, "Deployment", "api", "dry_run")); got != 1 {
+		t.Errorf("rollouts triggered dry_run counter = %v want 1", got)
 	}
 	drainEvents(t, r, "WouldRestart")
+
+	// A second reconcile inside the in-memory dry-run cooldown is skipped.
+	if _, err := r.Reconcile(ctx, policyRequest(ns)); err != nil {
+		t.Fatalf("reconcile (second): %v", err)
+	}
+	if got := testutil.ToFloat64(metrics.RolloutsSkipped.WithLabelValues(ns, "Deployment", "api", "cooldown")); got != 1 {
+		t.Errorf("rollouts skipped cooldown counter = %v want 1", got)
+	}
 }
 
 // drainEvents asserts that the fake recorder captured an event with the given
@@ -304,34 +315,6 @@ func drainEvents(t *testing.T, r *controller.Reconciler, reason string) {
 			t.Errorf("expected a %s event", reason)
 			return
 		}
-	}
-}
-
-func TestReconcile_PolicyDeletionRemovesDryRunGauge(t *testing.T) {
-	c, stop := startEnv(t)
-	defer stop()
-	ctx := context.Background()
-	const ns = "dryrun-cleanup"
-
-	r := seedLeakingDeployment(t, c, ns)
-
-	if _, err := r.Reconcile(ctx, policyRequest(ns)); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
-	before := testutil.CollectAndCount(metrics.PolicyDryRun)
-
-	// The finalizer is pre-set, so Delete only stamps deletionTimestamp; the
-	// next reconcile releases the slot, drops the gauge, and removes the
-	// finalizer.
-	if err := c.Delete(ctx, getState(t, c, ns)); err != nil {
-		t.Fatalf("delete policy: %v", err)
-	}
-	if _, err := r.Reconcile(ctx, policyRequest(ns)); err != nil {
-		t.Fatalf("reconcile (deletion): %v", err)
-	}
-
-	if after := testutil.CollectAndCount(metrics.PolicyDryRun); after != before-1 {
-		t.Errorf("gauge series = %d after deletion, want %d", after, before-1)
 	}
 }
 

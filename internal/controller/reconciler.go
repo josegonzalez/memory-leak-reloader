@@ -86,7 +86,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	policy := &v1alpha1.MemoryLeakPolicy{}
 	if err := r.Client.Get(ctx, req.NamespacedName, policy); err != nil {
 		if apierrors.IsNotFound(err) {
-			metrics.PolicyDryRun.DeleteLabelValues(req.Namespace, req.Name)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
@@ -96,7 +95,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// folded state) is deleted.
 	wkey := restart.WorkloadKey(policy.Spec.WorkloadRef.Kind, policy.Namespace, policy.Spec.WorkloadRef.Name)
 	if !policy.DeletionTimestamp.IsZero() {
-		metrics.PolicyDryRun.DeleteLabelValues(policy.Namespace, policy.Name)
 		if controllerutil.ContainsFinalizer(policy, PolicyFinalizer) {
 			if r.Gate.Holds(wkey) {
 				r.Gate.Release(wkey)
@@ -118,13 +116,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	podCfg := config.ResolvePolicy(r.Defaults, policy.Spec)
 
-	// Surface the effective mode: per-policy gauge plus a status field (printer
-	// column), persisted only when it drifts.
-	gaugeVal := 0.0
-	if podCfg.DryRun {
-		gaugeVal = 1
-	}
-	metrics.PolicyDryRun.WithLabelValues(policy.Namespace, policy.Name).Set(gaugeVal)
+	// Surface the effective mode as a status field (printer column), persisted
+	// only when it drifts.
 	if policy.Status.DryRun != podCfg.DryRun {
 		policy.Status.DryRun = podCfg.DryRun
 		if err := r.State.Persist(ctx, policy); err != nil {
@@ -160,7 +153,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	settled, err := wl.IsSettled()
 	switch {
 	case errors.Is(err, restart.ErrNotAutoRestartable):
-		return r.skip("not_autorestartable")
+		return r.skip(policy, "not_autorestartable")
 	case err != nil:
 		return ctrl.Result{}, err
 	}
@@ -176,7 +169,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			metrics.InflightRollouts.Set(float64(r.Gate.Inflight()))
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
-		return r.skip("in_progress")
+		return r.skip(policy, "in_progress")
 	}
 	// Settled and we held a slot from our own prior restart: release it and record
 	// the completion. If the workload settled at a version other than the one we
@@ -245,19 +238,19 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if breach == nil {
 		return ctrl.Result{}, nil
 	}
-	metrics.ThresholdBreaches.WithLabelValues(string(breach.Det.Mode)).Inc()
+	metrics.ThresholdBreaches.WithLabelValues(wl.Ref.Namespace, string(wl.Kind), wl.Ref.Name, string(breach.Det.Mode)).Inc()
 	r.Recorder.Eventf(breachPod, nil, corev1.EventTypeNormal, reasonBreachDetected, "Detect",
 		"container %s leaking: %s (observed=%d threshold=%d)", breach.Name, result.Reason, result.Observed, result.Threshold)
 
 	// Cooldown + circuit breaker (both read from the policy status).
 	if restart.InCooldown(policy.Status, now, podCfg.Cooldown) {
-		return r.skip("cooldown")
+		return r.skip(policy, "cooldown")
 	}
 	if restart.BreakerTripped(policy.Status, curVersion, now, r.RestartWindow, r.MaxRestartsPerWindow) {
 		r.Recorder.Eventf(wl.Object(), nil, corev1.EventTypeWarning, reasonCircuitBreaker, "Restart",
 			"max restarts per window reached; not restarting %s", wkey)
 		r.notify(ctx, notify.EventCircuitBreakerTripped, wl, breach, result, now, podCfg)
-		return r.skip("circuit_breaker")
+		return r.skip(policy, "circuit_breaker")
 	}
 
 	// Maintenance window (policy override beats controller default).
@@ -270,7 +263,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 	if !windows.IsAllowed(now) {
-		metrics.RolloutsDeferred.Inc()
+		metrics.RolloutsDeferred.WithLabelValues(wl.Ref.Namespace, string(wl.Kind), wl.Ref.Name).Inc()
 		r.Recorder.Eventf(wl.Object(), nil, corev1.EventTypeNormal, reasonRestartDeferred, "Restart",
 			"restart deferred: outside maintenance window")
 		r.notify(ctx, notify.EventRestartDeferred, wl, breach, result, now, podCfg)
@@ -284,9 +277,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// Acquire the in-flight slot (per-workload dedupe + global cap).
 	switch r.Gate.TryAcquire(wkey, now) {
 	case gate.AlreadyInF:
-		return r.skip("in_progress")
+		return r.skip(policy, "in_progress")
 	case gate.CapReached:
-		return r.skipRequeue("cap")
+		return r.skipRequeue(policy, "cap")
 	}
 	metrics.InflightRollouts.Set(float64(r.Gate.Inflight()))
 
@@ -300,11 +293,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	} else if fresh.TemplateVersion() != curVersion {
 		r.Gate.Release(wkey)
 		metrics.InflightRollouts.Set(float64(r.Gate.Inflight()))
-		return r.skip("superseded")
+		return r.skip(policy, "superseded")
 	}
 
 	// Best-effort pre-restart profile capture (records the artifact on the policy).
-	r.captureProfile(ctx, breachPod, podCfg, breach, now, &policy.Status, log)
+	r.captureProfile(ctx, breachPod, wl, podCfg, breach, now, &policy.Status, log)
 
 	if podCfg.DryRun {
 		r.Gate.Release(wkey) // nothing actually in flight in dry-run
@@ -312,12 +305,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// Dry-run cannot write the cooldown state, so throttle the would-restart
 		// Event + notification in memory to the cadence a real restart would have.
 		if r.recentlyWouldRestart(wkey, now, podCfg.Cooldown) {
-			return r.skip("cooldown")
+			return r.skip(policy, "cooldown")
 		}
 		r.lastWouldRestart.Store(wkey, now)
 		r.Recorder.Eventf(wl.Object(), nil, corev1.EventTypeNormal, reasonWouldRestart, "Restart",
 			"[dry-run] would restart %s due to container %s (observed=%d threshold=%d)", wkey, breach.Name, result.Observed, result.Threshold)
-		metrics.RolloutsTriggered.WithLabelValues(string(wl.Kind), "dry_run").Inc()
+		metrics.RolloutsTriggered.WithLabelValues(wl.Ref.Namespace, string(wl.Kind), wl.Ref.Name, "dry_run").Inc()
 		r.notify(ctx, notify.EventRestartTriggered, wl, breach, result, now, podCfg)
 		return ctrl.Result{}, nil
 	}
@@ -333,16 +326,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if err := r.State.Persist(ctx, policy); err != nil {
 		r.Gate.Release(wkey)
 		metrics.InflightRollouts.Set(float64(r.Gate.Inflight()))
-		metrics.RolloutsTriggered.WithLabelValues(string(wl.Kind), "error").Inc()
+		metrics.RolloutsTriggered.WithLabelValues(wl.Ref.Namespace, string(wl.Kind), wl.Ref.Name, "error").Inc()
 		return ctrl.Result{}, fmt.Errorf("persist restart state for %s: %w", wkey, err)
 	}
 	if err := wl.Dispatch(ctx, r.Client, now); err != nil {
 		r.Gate.Release(wkey)
 		metrics.InflightRollouts.Set(float64(r.Gate.Inflight()))
-		metrics.RolloutsTriggered.WithLabelValues(string(wl.Kind), "error").Inc()
+		metrics.RolloutsTriggered.WithLabelValues(wl.Ref.Namespace, string(wl.Kind), wl.Ref.Name, "error").Inc()
 		return ctrl.Result{}, fmt.Errorf("dispatch restart for %s: %w", wkey, err)
 	}
-	metrics.RolloutsTriggered.WithLabelValues(string(wl.Kind), "success").Inc()
+	metrics.RolloutsTriggered.WithLabelValues(wl.Ref.Namespace, string(wl.Kind), wl.Ref.Name, "success").Inc()
 	r.Recorder.Eventf(wl.Object(), nil, corev1.EventTypeNormal, reasonRestartTriggered, "Restart",
 		"restarted %s due to container %s (observed=%d threshold=%d, mode=%s)", wkey, breach.Name, result.Observed, result.Threshold, breach.Det.Mode)
 	r.notify(ctx, notify.EventRestartTriggered, wl, breach, result, now, podCfg)
@@ -351,15 +344,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 }
 
-// skip records a skipped restart by reason (the reason label is the source of
-// truth for why; see the metric and the docs/troubleshooting table).
-func (r *Reconciler) skip(reason string) (ctrl.Result, error) {
-	metrics.RolloutsSkipped.WithLabelValues(reason).Inc()
+// skip records a skipped restart by workload and reason (the reason label is
+// the source of truth for why; see the metric and the docs/troubleshooting table).
+func (r *Reconciler) skip(policy *v1alpha1.MemoryLeakPolicy, reason string) (ctrl.Result, error) {
+	metrics.RolloutsSkipped.WithLabelValues(policy.Namespace, policy.Spec.WorkloadRef.Kind, policy.Spec.WorkloadRef.Name, reason).Inc()
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) skipRequeue(reason string) (ctrl.Result, error) {
-	metrics.RolloutsSkipped.WithLabelValues(reason).Inc()
+func (r *Reconciler) skipRequeue(policy *v1alpha1.MemoryLeakPolicy, reason string) (ctrl.Result, error) {
+	metrics.RolloutsSkipped.WithLabelValues(policy.Namespace, policy.Spec.WorkloadRef.Kind, policy.Spec.WorkloadRef.Name, reason).Inc()
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 }
 
@@ -373,7 +366,7 @@ func (r *Reconciler) warnUnmonitorableOnce(pod *corev1.Pod, log logr.Logger) {
 		"no watched container has a memory limit or hard-cap; pod will not be monitored")
 }
 
-func (r *Reconciler) captureProfile(ctx context.Context, pod *corev1.Pod, podCfg config.PodConfig, breach *Target, now time.Time, st *v1alpha1.MemoryLeakPolicyStatus, log logr.Logger) {
+func (r *Reconciler) captureProfile(ctx context.Context, pod *corev1.Pod, wl *restart.Workload, podCfg config.PodConfig, breach *Target, now time.Time, st *v1alpha1.MemoryLeakPolicyStatus, log logr.Logger) {
 	if r.Capturer == nil {
 		return
 	}
@@ -387,7 +380,7 @@ func (r *Reconciler) captureProfile(ctx context.Context, pod *corev1.Pod, podCfg
 	// Dry-run is decided per policy, so the capture (real I/O) is gated here
 	// rather than in the Capturer, which is shared across all policies.
 	if podCfg.DryRun {
-		metrics.ProfileCaptures.WithLabelValues("skipped").Inc()
+		metrics.ProfileCaptures.WithLabelValues(wl.Ref.Namespace, string(wl.Kind), wl.Ref.Name, "skipped").Inc()
 		return
 	}
 	path := podCfg.PprofPath
@@ -398,10 +391,10 @@ func (r *Reconciler) captureProfile(ctx context.Context, pod *corev1.Pod, podCfg
 	res, err := r.Capturer.Capture(ctx, pod.Status.PodIP, path, key)
 	switch {
 	case err != nil:
-		metrics.ProfileCaptures.WithLabelValues("error").Inc()
+		metrics.ProfileCaptures.WithLabelValues(wl.Ref.Namespace, string(wl.Kind), wl.Ref.Name, "error").Inc()
 		log.Info("profile capture failed (non-fatal)", "error", err.Error())
 	default:
-		metrics.ProfileCaptures.WithLabelValues("success").Inc()
+		metrics.ProfileCaptures.WithLabelValues(wl.Ref.Namespace, string(wl.Kind), wl.Ref.Name, "success").Inc()
 		if st != nil {
 			st.LastProfile = &v1alpha1.ProfileRef{URL: res.URI, CapturedAt: metav1.NewTime(now)}
 		}
