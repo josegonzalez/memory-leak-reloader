@@ -122,8 +122,9 @@ The CRD is installed by the chart (`crds.install`, default `true`).
 
 ## Helm values
 
-The full set of values is documented inline in
-`charts/memory-leak-reloader/values.yaml`. Key groups: `crds`, `scope`, `dryRun`,
+The full set of values is documented in the generated
+[chart README](../charts/memory-leak-reloader/README.md) (regenerate with
+`make helm-docs`). Key groups: `crds`, `scope`, `dryRun`,
 `log`, `detection`, `rollout`, `maintenanceWindows`, `profileCapture`,
 `notifications`, `workloads`, `datasource`, `metrics`, `leaderElection`, `rbac`,
 `serviceAccount`, `resources`. These set the controller-wide defaults that a

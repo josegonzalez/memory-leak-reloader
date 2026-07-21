@@ -96,6 +96,7 @@ make test        # unit tests (race)
 make envtest     # controller tests against a test apiserver
 make e2e         # kind-based end-to-end (isolated kubeconfig)
 make helm-lint   # lint + template the chart
+make helm-docs   # regenerate the chart README (values table)
 ```
 
 The e2e suite uses a dedicated kind cluster and an **isolated kubeconfig**; it

@@ -1,142 +1,211 @@
 image:
-  # Published to the GitHub Container Registry (ghcr.io/<owner>/<repo>).
+  # -- Controller image repository, published to the GitHub Container Registry (`ghcr.io/<owner>/<repo>`).
   repository: ghcr.io/josegonzalez/memory-leak-reloader
-  tag: ""            # defaults to chart appVersion
+  # -- Image tag; defaults to the chart appVersion when empty.
+  tag: ""
+  # -- Image pull policy.
   pullPolicy: IfNotPresent
 
+# -- Image pull secrets for the controller pod.
 imagePullSecrets: []
-replicaCount: 2       # 2+ only meaningful with leaderElection.enabled
+# -- Controller replicas; 2+ only meaningful with leaderElection.enabled (only the leader samples and acts).
+replicaCount: 2
 
 crds:
-  install: true       # install the MemoryLeakPolicy CRD (set false if managed out-of-band)
+  # -- Install the MemoryLeakPolicy CRD (set false if managed out-of-band).
+  install: true
 
 scope:
-  mode: cluster       # cluster | namespaces | single
-  namespaces: []      # required when mode != cluster; drives which namespaces' policies
-                      # are watched and Role vs ClusterRole
+  # -- Watch scope: one of cluster, namespaces, single.
+  mode: cluster
+  # -- Required when mode != cluster; drives which namespaces' policies are watched and Role vs ClusterRole.
+  namespaces: []
 
-dryRun: true          # default: log "would trigger", take no action. Set false to enforce restarts.
+# -- Default: log "would trigger", take no action. Set false to enforce restarts.
+dryRun: true
 
 log:
-  format: json        # logfmt (local) | json (Datadog)
+  # -- Log format: one of logfmt (local), json (Datadog).
+  format: json
+  # -- Log level.
   level: info
 
 detection:
-  mode: sustained     # sustained | trend | combined
+  # -- Default detection mode: one of sustained, trend, combined.
+  mode: sustained
+  # -- Breach when usage >= this percent of the container memory limit.
   thresholdPercent: 85
+  # -- Detection window.
   window: 10m
+  # -- Memory sampling interval.
   sampleInterval: 30s
+  # -- Minimum projected growth over one window before trend modes flag a leak.
   trendMinGrowth: 100Mi
+  # -- Ignore pods younger than this.
   startupGracePeriod: 5m
 
 rollout:
+  # -- Per-workload cooldown between restarts.
   cooldown: 30m
+  # -- Global cap on concurrent restarts across all workloads.
   globalMaxConcurrent: 1
+  # -- Circuit breaker: restarts allowed per workload within restartWindow.
   maxRestartsPerWindow: 3
+  # -- Window the circuit breaker counts restarts over.
   restartWindow: 24h
+  # -- A rollout still unsettled after this ages out with outcome TimedOut.
   inflightTimeout: 15m
+  # -- Requeue interval while polling an in-flight rollout to settle.
   requeueAfter: 30s
 
-# Allowed restart windows; empty = always allowed. Each item:
-#   { days: Mon-Fri, start: "09:00", end: "17:00", timezone: America/New_York }
+# -- Allowed restart windows; empty = always allowed. Each item: `{ days: Mon-Fri, start: "09:00", end: "17:00", timezone: America/New_York }`.
 maintenanceWindows: []
 
 profileCapture:
+  # -- Capture a heap profile from the leaking container immediately before the restart.
   enabled: false
+  # -- pprof path to capture.
   pprofPath: /debug/pprof/heap
+  # -- Port the target container serves pprof on.
   pprofPort: 6060
+  # -- Time box for the capture request; capture is best-effort and never blocks the restart.
   timeout: 10s
-  sink: objectstore      # objectstore | volume | log
-  objectStore:           # used when sink=objectstore
-    provider: s3         # s3 | gcs | azblob
+  # -- Profile sink: one of objectstore, volume, log.
+  sink: objectstore
+  objectStore:
+    # -- Object store provider (used when sink=objectstore): one of s3, gcs, azblob.
+    provider: s3
+    # -- Bucket profiles are uploaded to (used when sink=objectstore).
     bucket: ""
+    # -- Key prefix for uploaded profiles.
     prefix: memreload-profiles/
+    # -- Object store region.
     region: ""
-  volume:                # used when sink=volume
+  volume:
+    # -- Path profiles are written to (used when sink=volume); the chart mounts an emptyDir by default.
     mountPath: /var/run/memreload/profiles
 
 notifications:
-  events: [RestartTriggered, CircuitBreakerTripped]   # also: RestartDeferred
+  # -- Event kinds that notify; also available: RestartDeferred.
+  events: [RestartTriggered, CircuitBreakerTripped]
   slack:
+    # -- Enable Slack notifications.
     enabled: false
-    # Bot-token mode enables per-pod channel override via memreload.io/slack-channel.
-    botToken: ""                            # inline -> chart Secret -> SLACK_BOT_TOKEN env
-    botDefaultChannel: ""                   # channel used when a pod sets none
-    # Incoming-webhook mode (fixed channel, no per-pod override). Bot token wins if both set.
-    webhookUrl: ""                          # inline -> chart Secret
-    # Reference an existing Secret instead of inline (takes precedence):
+    # -- Bot token (inline -> chart Secret -> SLACK_BOT_TOKEN env). Bot-token mode enables per-pod channel override via `memreload.io/slack-channel`.
+    botToken: ""
+    # -- Channel used when a pod sets none (bot-token mode).
+    botDefaultChannel: ""
+    # -- Incoming-webhook URL (inline -> chart Secret); fixed channel, no per-pod override. Bot token wins if both set.
+    webhookUrl: ""
+    # -- Reference an existing Secret instead of inline values (takes precedence).
     existingSecret: { name: "", botTokenKey: bot-token, webhookKey: webhook-url }
   webhook:
+    # -- Enable generic webhook notifications.
     enabled: false
+    # -- Webhook URL.
     url: ""
-    authHeaderSecret: { name: "", key: "" } # optional -> Authorization header
+    # -- Optional Secret reference rendered into the Authorization header.
+    authHeaderSecret: { name: "", key: "" }
   datadogEvent:
-    enabled: false        # reuses datasource.datadog credentials/site
-  # Named routes for per-pod targeting via memreload.io/notify-routes. URLs/auth are sensitive and
-  # are rendered into a mounted <release>-notify-routes Secret (routes.json), or reference an existing
-  # Secret. Pods reference routes by non-secret name only.
-  # type may be omitted (or "auto") to infer from the URL: a hooks.slack.com host
-  # becomes slack-webhook (Block Kit), anything else a generic webhook. Explicit type wins.
+    # -- Send Datadog Events; reuses datasource.datadog credentials/site.
+    enabled: false
+  # -- Named routes for per-pod targeting via `memreload.io/notify-routes`. URLs/auth are sensitive and are rendered into a mounted `<release>-notify-routes` Secret (routes.json), or reference an existing Secret; pods reference routes by non-secret name only. type may be omitted (or "auto") to infer from the URL: a hooks.slack.com host becomes slack-webhook (Block Kit), anything else a generic webhook. Explicit type wins.
   routes: []
     # - { name: team-payments, url: "https://...", authHeader: "Bearer x" }   # auto -> webhook
     # - { name: sre-slack, url: "https://hooks.slack.com/services/..." }       # auto -> slack-webhook
     # - { name: forced, type: webhook, url: "https://hooks.slack.com/..." }    # explicit override
-  routesExistingSecret: ""   # name of an existing Secret holding key routes.json (instead of inline routes)
+  # -- Name of an existing Secret holding key routes.json (instead of inline routes).
+  routesExistingSecret: ""
 
-workloads:            # which owner kinds are eligible
+workloads:
+  # -- Deployments are eligible owner kinds.
   deployments: true
+  # -- StatefulSets are eligible owner kinds.
   statefulSets: true
-  argoRollouts: true  # auto-disabled at startup if the argoproj.io Rollout CRD isn't installed
+  # -- Argo Rollouts are eligible owner kinds; auto-disabled at startup if the argoproj.io Rollout CRD isn't installed.
+  argoRollouts: true
 
 datasource:
-  type: metrics-server        # metrics-server | prometheus | datadog (no fallback)
+  # -- Datasource: one of metrics-server, prometheus, datadog (no fallback).
+  type: metrics-server
   prometheus:
+    # -- Prometheus base URL.
     url: ""
+    # -- Metric queried for container working-set memory.
     query: container_memory_working_set_bytes
-    token: ""                 # (A) inline bearer token -> chart creates Secret
-    existingSecret: { name: "", tokenKey: token }   # (B) reference existing; takes precedence
+    # -- Inline bearer token; the chart creates a Secret.
+    token: ""
+    # -- Reference an existing Secret holding the bearer token; takes precedence over the inline token.
+    existingSecret: { name: "", tokenKey: token }
   datadog:
+    # -- Datadog site.
     site: datadoghq.com
+    # -- Metric queried for container working-set memory.
     metric: kubernetes.memory.working_set
-    apiKey: ""                # (A) inline -> chart creates Secret <release>-datadog
+    # -- Inline API key; the chart creates Secret `<release>-datadog`.
+    apiKey: ""
+    # -- Inline application key.
     appKey: ""
-    existingSecret: { name: "", apiKeyKey: api-key, appKeyKey: app-key }  # (B) reference existing
+    # -- Reference an existing Secret holding the keys; takes precedence over inline keys.
+    existingSecret: { name: "", apiKeyKey: api-key, appKeyKey: app-key }
 
 metrics:
+  # -- Expose controller Prometheus metrics.
   enabled: true
+  # -- Metrics listen address.
   bindAddress: ":8080"
+  # -- Metrics Service.
   service: { enabled: true, port: 8080 }
-  serviceMonitor: { enabled: false }   # Prometheus Operator scraping
-  prometheusRule: { enabled: false }   # ships alert rules
+  # -- ServiceMonitor for Prometheus Operator scraping.
+  serviceMonitor: { enabled: false }
+  # -- PrometheusRule shipping the chart's alert rules.
+  prometheusRule: { enabled: false }
 
 leaderElection:
+  # -- Enable leader election; only the leader samples and acts.
   enabled: true
+  # -- Leader-election lease name.
   id: memory-leak-reloader
 
 rbac:
+  # -- Create the Role/ClusterRole and bindings the controller needs.
   create: true
 
 serviceAccount:
+  # -- Create the controller ServiceAccount.
   create: true
-  name: ""             # set explicitly when using EKS Pod Identity
-  annotations: {}     # e.g. IRSA (eks.amazonaws.com/role-arn) / GKE WI / Azure WI
+  # -- ServiceAccount name; set explicitly when using EKS Pod Identity.
+  name: ""
+  # -- ServiceAccount annotations, e.g. IRSA (eks.amazonaws.com/role-arn) / GKE WI / Azure WI.
+  annotations: {}
 
+# -- Health probe listen address.
 healthProbeBindAddress: ":8081"
 
+# -- Controller pod resources.
 resources:
   requests: { cpu: 100m, memory: 128Mi }
   limits: { memory: 256Mi }
 
+# -- Extra pod annotations.
 podAnnotations: {}
+# -- Extra pod labels.
 podLabels: {}
+# -- Node selector for the controller pod.
 nodeSelector: {}
+# -- Tolerations for the controller pod.
 tolerations: []
+# -- Affinity rules for the controller pod.
 affinity: {}
+# -- Pod security context.
+# @default -- restricted: runAsNonRoot, uid 65532, RuntimeDefault seccomp
 securityContext:
   runAsNonRoot: true
   runAsUser: 65532
   seccompProfile:
     type: RuntimeDefault
+# -- Container security context.
+# @default -- no privilege escalation, read-only root filesystem, all capabilities dropped
 containerSecurityContext:
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: true

@@ -43,6 +43,14 @@ jobs:
           helm template m charts/memory-leak-reloader \
             --set metrics.prometheusRule.enabled=true \
             --set validation.admissionPolicy.enabled=true >/dev/null
+      - name: Helm docs (drift check)
+        run: |
+          make helm-docs
+          if [ -n "$(git status --porcelain -- charts)" ]; then
+            git diff -- charts
+            echo "::error::Chart README is out of date - run 'make helm-docs' and commit the result"
+            exit 1
+          fi
       - name: Validate dashboard JSON
         run: |
           for f in dashboards/*.json; do

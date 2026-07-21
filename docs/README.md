@@ -9,3 +9,5 @@
 - [Notifications](notifications.md) - Slack, webhook, Datadog Events.
 - [Troubleshooting](troubleshooting.md) - interpreting Events and metrics.
 - [Design](design.md) - architecture and safety gates.
+- [Helm chart values](../charts/memory-leak-reloader/README.md) - generated
+  chart install and values reference.

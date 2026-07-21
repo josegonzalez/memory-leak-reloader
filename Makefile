@@ -6,7 +6,7 @@ IMG ?= ghcr.io/josegonzalez/memory-leak-reloader:dev
 KIND_CLUSTER ?= memreload-e2e
 KUBECONFIG_E2E ?= ./tmp/claude/$(KIND_CLUSTER).kubeconfig
 
-.PHONY: all build test unit envtest e2e lint vet fmt docker-build helm-lint clean generate manifests
+.PHONY: all build test unit envtest e2e lint vet fmt docker-build helm-lint helm-docs clean generate manifests
 
 all: build
 
@@ -60,6 +60,15 @@ docker-build:
 helm-lint:
 	helm lint charts/memory-leak-reloader
 	helm template memreload charts/memory-leak-reloader --set scope.mode=cluster >/dev/null
+
+# helm-docs regenerates the chart README from README.md.gotmpl and the `# --`
+# annotations in values.yaml. Pinned so local and CI output are byte-identical;
+# the CI drift check reruns this target and fails on any diff.
+HELM_DOCS_VERSION ?= v1.14.2
+HELM_DOCS ?= go run github.com/norwoodj/helm-docs/cmd/helm-docs@$(HELM_DOCS_VERSION)
+
+helm-docs:
+	$(HELM_DOCS) --chart-search-root charts --sort-values-order file
 
 clean:
 	rm -rf bin ./tmp/claude/$(KIND_CLUSTER).kubeconfig
