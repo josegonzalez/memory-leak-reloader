@@ -1,6 +1,15 @@
 # Installation
 
-The controller installs via the Helm chart in `charts/memory-leak-reloader`.
+The controller installs via the Helm chart, published to the Helm repository
+at `https://josediazgonzalez.com/memory-leak-reloader`:
+
+```sh
+helm repo add memreload https://josediazgonzalez.com/memory-leak-reloader
+helm repo update
+```
+
+When developing against a local checkout, install from the chart path
+(`./charts/memory-leak-reloader`) instead of `memreload/memory-leak-reloader`.
 
 ## Scopes
 
@@ -10,11 +19,11 @@ The controller installs via the Helm chart in `charts/memory-leak-reloader`.
 
 ```sh
 # cluster-wide (dry-run is the default)
-helm install memreload ./charts/memory-leak-reloader \
+helm install memreload memreload/memory-leak-reloader \
   -n memreload-system --create-namespace
 
 # scoped to two namespaces
-helm install memreload ./charts/memory-leak-reloader \
+helm install memreload memreload/memory-leak-reloader \
   -n memreload-system --create-namespace \
   --set scope.mode=namespaces --set 'scope.namespaces={payments,checkout}'
 ```

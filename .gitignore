@@ -2,6 +2,10 @@
 /bin/
 /manager
 
+# chart-releaser artifacts
+/.cr-release-packages/
+/.cr-index/
+
 # Local temp and e2e artifacts (kubeconfigs, logs)
 /tmp/
 test/e2e/tmp/
