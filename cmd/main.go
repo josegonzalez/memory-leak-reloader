@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/klog/v2"
 	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -117,6 +118,10 @@ func run() error {
 
 	logger := logging.New(*logFormat, *logLevel)
 	ctrl.SetLogger(logger)
+	// client-go (leader election, reflectors) logs via klog, not the
+	// controller-runtime logger; route it through the same handler so it
+	// honors --log-format and --log-level.
+	klog.SetLogger(logger)
 
 	growth, err := resource.ParseQuantity(*trendGrowth)
 	if err != nil {
