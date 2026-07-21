@@ -14,9 +14,8 @@ import (
 
 // Result describes the outcome of a capture.
 type Result struct {
-	URI     string // where the profile was written (or "" if skipped/failed)
-	Size    int    // bytes captured
-	Skipped bool   // true when capture was disabled or running in dry-run
+	URI  string // where the profile was written (or "" if failed)
+	Size int    // bytes captured
 }
 
 // Sink stores a captured profile blob and returns a reference URI.
@@ -33,11 +32,10 @@ type Capturer struct {
 	Port    int           // pprof port on the pod (default 6060)
 	Timeout time.Duration // overall capture budget
 	Sink    Sink
-	DryRun  bool
 }
 
 // NewCapturer builds a Capturer with sane defaults.
-func NewCapturer(sink Sink, port int, timeout time.Duration, dryRun bool) *Capturer {
+func NewCapturer(sink Sink, port int, timeout time.Duration) *Capturer {
 	if port == 0 {
 		port = 6060
 	}
@@ -49,17 +47,13 @@ func NewCapturer(sink Sink, port int, timeout time.Duration, dryRun bool) *Captu
 		Port:    port,
 		Timeout: timeout,
 		Sink:    sink,
-		DryRun:  dryRun,
 	}
 }
 
 // Capture fetches the profile at http://podIP:port<path> and stores it under
-// key. In dry-run it performs no I/O and returns a skipped Result. All errors
-// are returned for logging/metrics but are non-fatal to the caller.
+// key. All errors are returned for logging/metrics but are non-fatal to the
+// caller.
 func (c *Capturer) Capture(ctx context.Context, podIP, path, key string) (Result, error) {
-	if c.DryRun {
-		return Result{Skipped: true}, nil
-	}
 	if podIP == "" {
 		return Result{}, fmt.Errorf("pod has no IP yet")
 	}

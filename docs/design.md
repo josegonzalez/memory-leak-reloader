@@ -27,7 +27,8 @@ settle-state gate (poll/complete any in-flight rollout) → list workload pods �
 per pod: health gate (Ready + past startup grace) → current-revision gate →
 select containers → detection (sustained/trend/combined) → cooldown → circuit
 breaker → maintenance window → concurrency gate (per-workload dedup + global
-cap) → profile capture → dispatch (or dry-run log) → record in policy status →
+cap) → profile capture → dispatch (or, when the policy's `spec.dryRun` is true -
+the default - a would-restart log) → record in policy status →
 requeue to poll settle.
 
 The policy carries a finalizer so the reconciler can release the workload's

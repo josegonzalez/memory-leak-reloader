@@ -13,8 +13,14 @@
 
 ## Installing the chart
 
-The controller ships in dry-run by default - it logs what it would restart but
-takes no action until you set `dryRun=false`.
+Every `MemoryLeakPolicy` is dry-run by default - the controller logs what it
+would restart but takes no action until a policy sets `spec.dryRun: false`.
+Enforcement is opt-in per workload; there is no chart-level switch.
+
+> **Breaking change**: earlier chart versions had a `dryRun` value that toggled
+> the whole installation. It has been removed and is ignored if still set (for
+> example via `--reuse-values`), so a fleet that had `dryRun=false` reverts to
+> dry-run until each policy sets `spec.dryRun: false`.
 
 ```sh
 helm repo add memreload https://josediazgonzalez.com/memory-leak-reloader

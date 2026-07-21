@@ -5,6 +5,7 @@ package envtest
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,11 +20,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
+
 	"github.com/josegonzalez/memory-leak-reloader/api/v1alpha1"
 	"github.com/josegonzalez/memory-leak-reloader/internal/clock"
 	"github.com/josegonzalez/memory-leak-reloader/internal/config"
 	"github.com/josegonzalez/memory-leak-reloader/internal/controller"
 	"github.com/josegonzalez/memory-leak-reloader/internal/gate"
+	"github.com/josegonzalez/memory-leak-reloader/internal/metrics"
 	"github.com/josegonzalez/memory-leak-reloader/internal/restart"
 	"github.com/josegonzalez/memory-leak-reloader/internal/sampling"
 )
@@ -137,6 +141,9 @@ func seedLeakingDeployment(t *testing.T, c client.Client, ns string) *controller
 		},
 		Spec: v1alpha1.MemoryLeakPolicySpec{
 			WorkloadRef: v1alpha1.WorkloadRef{Kind: "Deployment", Name: "api"},
+			// Enforcement is opt-in (the CRD defaults dryRun to true); these
+			// tests exercise real restarts.
+			DryRun: boolp(false),
 		},
 	}
 	if err := c.Create(ctx, policy); err != nil {
@@ -219,6 +226,112 @@ func TestReconcile_TriggersRestartOnLeak(t *testing.T) {
 	}
 	if len(st.History) != 1 || st.History[0].Outcome != v1alpha1.OutcomeInProgress {
 		t.Errorf("history = %+v", st.History)
+	}
+	if st.DryRun {
+		t.Error("status.dryRun should be false for an enforcing policy")
+	}
+	if got := testutil.ToFloat64(metrics.PolicyDryRun.WithLabelValues(ns, "api")); got != 0 {
+		t.Errorf("policy dry-run gauge = %v want 0", got)
+	}
+}
+
+func TestReconcile_DefaultsToDryRun(t *testing.T) {
+	c, stop := startEnv(t)
+	defer stop()
+	ctx := context.Background()
+	const ns = "dryrun-default"
+
+	r := seedLeakingDeployment(t, c, ns)
+
+	// Clear the helper's enforcement opt-in: an update with dryRun absent must
+	// be re-defaulted to true by the apiserver (CRD structural default).
+	policy := getState(t, c, ns)
+	policy.Spec.DryRun = nil
+	if err := c.Update(ctx, policy); err != nil {
+		t.Fatalf("update policy: %v", err)
+	}
+	policy = getState(t, c, ns)
+	if policy.Spec.DryRun == nil || !*policy.Spec.DryRun {
+		t.Fatalf("spec.dryRun = %v, want the CRD default true", policy.Spec.DryRun)
+	}
+
+	if _, err := r.Reconcile(ctx, policyRequest(ns)); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	got := &appsv1.Deployment{}
+	if err := c.Get(ctx, types.NamespacedName{Namespace: ns, Name: "api"}, got); err != nil {
+		t.Fatalf("get deploy: %v", err)
+	}
+	if ann := got.Spec.Template.Annotations[config.AnnotationRestartedAt]; ann != "" {
+		t.Fatalf("dry-run must not patch restartedAt, got %q", ann)
+	}
+
+	st := getState(t, c, ns).Status
+	if st.RestartCount != 0 {
+		t.Errorf("restartCount = %d want 0", st.RestartCount)
+	}
+	if st.InFlight != nil {
+		t.Error("dry-run must not record an in-flight rollout")
+	}
+	if !st.DryRun {
+		t.Error("status.dryRun should surface the effective dry-run mode")
+	}
+	if r.Gate.Holds("Deployment/" + ns + "/api") {
+		t.Error("dry-run must release the in-flight slot")
+	}
+	if got := testutil.ToFloat64(metrics.PolicyDryRun.WithLabelValues(ns, "api")); got != 1 {
+		t.Errorf("policy dry-run gauge = %v want 1", got)
+	}
+	drainEvents(t, r, "WouldRestart")
+}
+
+// drainEvents asserts that the fake recorder captured an event with the given
+// reason.
+func drainEvents(t *testing.T, r *controller.Reconciler, reason string) {
+	t.Helper()
+	rec, ok := r.Recorder.(*events.FakeRecorder)
+	if !ok {
+		t.Fatalf("recorder is %T, want *events.FakeRecorder", r.Recorder)
+	}
+	for {
+		select {
+		case e := <-rec.Events:
+			if strings.Contains(e, reason) {
+				return
+			}
+		default:
+			t.Errorf("expected a %s event", reason)
+			return
+		}
+	}
+}
+
+func TestReconcile_PolicyDeletionRemovesDryRunGauge(t *testing.T) {
+	c, stop := startEnv(t)
+	defer stop()
+	ctx := context.Background()
+	const ns = "dryrun-cleanup"
+
+	r := seedLeakingDeployment(t, c, ns)
+
+	if _, err := r.Reconcile(ctx, policyRequest(ns)); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	before := testutil.CollectAndCount(metrics.PolicyDryRun)
+
+	// The finalizer is pre-set, so Delete only stamps deletionTimestamp; the
+	// next reconcile releases the slot, drops the gauge, and removes the
+	// finalizer.
+	if err := c.Delete(ctx, getState(t, c, ns)); err != nil {
+		t.Fatalf("delete policy: %v", err)
+	}
+	if _, err := r.Reconcile(ctx, policyRequest(ns)); err != nil {
+		t.Fatalf("reconcile (deletion): %v", err)
+	}
+
+	if after := testutil.CollectAndCount(metrics.PolicyDryRun); after != before-1 {
+		t.Errorf("gauge series = %d after deletion, want %d", after, before-1)
 	}
 }
 

@@ -69,7 +69,6 @@ type Reconciler struct {
 
 	Notifier *notify.Notifier
 
-	DryRun               bool
 	RestartWindow        time.Duration
 	MaxRestartsPerWindow int
 	RequeueAfter         time.Duration
@@ -87,6 +86,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	policy := &v1alpha1.MemoryLeakPolicy{}
 	if err := r.Client.Get(ctx, req.NamespacedName, policy); err != nil {
 		if apierrors.IsNotFound(err) {
+			metrics.PolicyDryRun.DeleteLabelValues(req.Namespace, req.Name)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
@@ -96,6 +96,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// folded state) is deleted.
 	wkey := restart.WorkloadKey(policy.Spec.WorkloadRef.Kind, policy.Namespace, policy.Spec.WorkloadRef.Name)
 	if !policy.DeletionTimestamp.IsZero() {
+		metrics.PolicyDryRun.DeleteLabelValues(policy.Namespace, policy.Name)
 		if controllerutil.ContainsFinalizer(policy, PolicyFinalizer) {
 			if r.Gate.Holds(wkey) {
 				r.Gate.Release(wkey)
@@ -116,6 +117,20 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	podCfg := config.ResolvePolicy(r.Defaults, policy.Spec)
+
+	// Surface the effective mode: per-policy gauge plus a status field (printer
+	// column), persisted only when it drifts.
+	gaugeVal := 0.0
+	if podCfg.DryRun {
+		gaugeVal = 1
+	}
+	metrics.PolicyDryRun.WithLabelValues(policy.Namespace, policy.Name).Set(gaugeVal)
+	if policy.Status.DryRun != podCfg.DryRun {
+		policy.Status.DryRun = podCfg.DryRun
+		if err := r.State.Persist(ctx, policy); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
 	// Resolve the managed workload.
 	wl, err := restart.GetWorkload(ctx, r.Client, restart.Kind(policy.Spec.WorkloadRef.Kind), policy.Namespace, policy.Spec.WorkloadRef.Name)
@@ -291,7 +306,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// Best-effort pre-restart profile capture (records the artifact on the policy).
 	r.captureProfile(ctx, breachPod, podCfg, breach, now, &policy.Status, log)
 
-	if r.DryRun {
+	if podCfg.DryRun {
 		r.Gate.Release(wkey) // nothing actually in flight in dry-run
 		metrics.InflightRollouts.Set(float64(r.Gate.Inflight()))
 		// Dry-run cannot write the cooldown state, so throttle the would-restart
@@ -369,6 +384,12 @@ func (r *Reconciler) captureProfile(ctx context.Context, pod *corev1.Pod, podCfg
 	if !enabled {
 		return
 	}
+	// Dry-run is decided per policy, so the capture (real I/O) is gated here
+	// rather than in the Capturer, which is shared across all policies.
+	if podCfg.DryRun {
+		metrics.ProfileCaptures.WithLabelValues("skipped").Inc()
+		return
+	}
 	path := podCfg.PprofPath
 	if path == "" {
 		path = "/debug/pprof/heap"
@@ -379,8 +400,6 @@ func (r *Reconciler) captureProfile(ctx context.Context, pod *corev1.Pod, podCfg
 	case err != nil:
 		metrics.ProfileCaptures.WithLabelValues("error").Inc()
 		log.Info("profile capture failed (non-fatal)", "error", err.Error())
-	case res.Skipped:
-		metrics.ProfileCaptures.WithLabelValues("skipped").Inc()
 	default:
 		metrics.ProfileCaptures.WithLabelValues("success").Inc()
 		if st != nil {
@@ -416,7 +435,7 @@ func (r *Reconciler) notify(ctx context.Context, t notify.EventType, wl *restart
 		Threshold:    result.Threshold,
 		Window:       breach.Det.Window,
 		Reason:       result.Reason,
-		DryRun:       r.DryRun,
+		DryRun:       podCfg.DryRun,
 		Time:         now,
 		Routes:       routes,
 		SlackChannel: podCfg.SlackChannel,

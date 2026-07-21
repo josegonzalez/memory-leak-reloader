@@ -31,8 +31,9 @@ func setup(t *testing.T) *harness {
 	return h
 }
 
-// TestDryRunThenEnforce installs in dry-run, confirms a "would restart" decision
-// surfaces, then enforces and confirms exactly one rollout restart fires.
+// TestDryRunThenEnforce opts a workload in (dry-run by default), confirms a
+// "would restart" decision surfaces, then flips the policy to enforce and
+// confirms exactly one rollout restart fires.
 func TestDryRunThenEnforce(t *testing.T) {
 	h := setup(t)
 
@@ -46,10 +47,11 @@ func TestDryRunThenEnforce(t *testing.T) {
 
 	h.run(t, "kubectl", "-n", h.namespace, "rollout", "status", "deploy/leaky", "--timeout=120s")
 
-	// Dry-run install: short window + low threshold so detection fires quickly.
-	h.installChart(t, append(scopedDetectionArgs(h.namespace), "--set", "dryRun=true")...)
+	// Install with a short window + low threshold so detection fires quickly.
+	h.installChart(t, append(scopedDetectionArgs(h.namespace), "--set", "rollout.cooldown=10m")...)
 
-	// Opt the workload in with a MemoryLeakPolicy (after the chart installs the CRD).
+	// Opt the workload in with a MemoryLeakPolicy (after the chart installs the
+	// CRD). Policies are dry-run by default.
 	applyPolicy(t, h, h.namespace, "")
 
 	// In dry-run, a WouldRestart Event should appear and no restart annotation.
@@ -64,11 +66,9 @@ func TestDryRunThenEnforce(t *testing.T) {
 		t.Fatalf("dry-run must not patch restartedAt, got %q", ann)
 	}
 
-	// Enforce.
-	h.installChart(t, append(scopedDetectionArgs(h.namespace),
-		"--set", "dryRun=false",
-		"--set", "rollout.cooldown=10m",
-	)...)
+	// Enforce: flip the policy itself; there is no chart-level switch.
+	h.run(t, "kubectl", "-n", h.namespace, "patch", "mlp", "leaky",
+		"--type=merge", "-p", `{"spec":{"dryRun":false}}`)
 
 	if !waitFor(t, 4*time.Minute, func() bool { return restartedAtAnnotation(t, h) != "" }) {
 		t.Fatal("expected a rollout restart (restartedAt annotation) after enforcing")
@@ -102,7 +102,6 @@ func TestPerPodNotificationRouting(t *testing.T) {
 	defaultURL := "http://default-recv." + ns + ".svc.cluster.local:8080/"
 	routeURL := "http://route-recv." + ns + ".svc.cluster.local:8080/"
 	h.installChart(t, append(scopedDetectionArgs(ns),
-		"--set", "dryRun=true",
 		"--set", "notifications.webhook.enabled=true",
 		"--set", "notifications.webhook.url="+defaultURL,
 		"--set", "notifications.routes[0].name=team",
@@ -254,7 +253,7 @@ spec:
 
 // scopedDetectionArgs are the Helm --set flags shared by the e2e installs:
 // single-namespace scope plus an aggressive detection config so a leak trips
-// quickly. Callers append dryRun and any feature-specific flags.
+// quickly. Callers append any feature-specific flags.
 func scopedDetectionArgs(ns string) []string {
 	return []string{
 		"--set", "scope.mode=single",

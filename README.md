@@ -32,9 +32,10 @@ history).
 
 ## Quickstart (dry-run by default)
 
-The controller ships in **dry-run by default** - it samples, evaluates, emits
-`WouldRestart` Events/metrics (and clearly-labeled notifications if a sink is
-configured) but takes no action until you opt into enforcement.
+Every policy is **dry-run by default** - the controller samples, evaluates,
+emits `WouldRestart` Events/metrics (and clearly-labeled notifications if a
+sink is configured) but takes no action until the policy opts into enforcement.
+There is no chart-level enforce switch.
 
 ```sh
 helm repo add memreload https://josediazgonzalez.com/memory-leak-reloader
@@ -43,18 +44,17 @@ helm install memreload memreload/memory-leak-reloader \
   --set scope.mode=single --set 'scope.namespaces={payments}'
 ```
 
-Watch for `WouldRestart` log lines / Events, then enforce:
+Watch for `WouldRestart` log lines / Events, then enforce per workload:
 
 ```sh
-helm upgrade memreload memreload/memory-leak-reloader \
-  --namespace memreload-system --reuse-values --set dryRun=false
+kubectl -n payments patch mlp api --type=merge -p '{"spec":{"dryRun":false}}'
 ```
 
 ## Opt a workload in
 
 Create a `MemoryLeakPolicy` referencing the workload. Only `workloadRef` is
-required; every other field inherits the controller defaults (Helm values /
-flags) when unset:
+required; `dryRun` defaults to `true` and every other field inherits the
+controller defaults (Helm values / flags) when unset:
 
 ```yaml
 apiVersion: memreload.io/v1alpha1
@@ -66,6 +66,7 @@ spec:
   workloadRef:
     kind: Deployment       # Deployment | StatefulSet | Rollout
     name: api
+  # dryRun: false          # opt into enforcement (default true: log/notify only)
   detection:
     mode: combined
     thresholdPercent: 80
@@ -74,7 +75,8 @@ spec:
   containers: ["app"]
 ```
 
-Inspect it with `kubectl -n payments get mlp` (state lives in the policy status).
+Inspect it with `kubectl -n payments get mlp` (state lives in the policy
+status; the `DRY-RUN` column shows each policy's effective mode).
 
 A watched container with **no memory limit** (and no `detection.thresholdAbsolute`
 cap) is ignored. If every watched container is unmonitorable, the controller

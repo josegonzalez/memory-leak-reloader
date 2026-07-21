@@ -57,6 +57,10 @@ type PodConfig struct {
 	StartupGrace time.Duration
 	Cooldown     time.Duration
 
+	// DryRun is the effective mode for the workload: true (the CRD default)
+	// logs/notifies would-be restarts without acting.
+	DryRun bool
+
 	// Containers is the requested monitor set. Empty means "use default
 	// selection"; the literal "*" element means all eligible containers.
 	Containers []string
@@ -88,6 +92,7 @@ func ResolvePolicy(d Defaults, spec v1alpha1.MemoryLeakPolicySpec) PodConfig {
 		Base:               resolveDetection(d.Detection, spec.Detection),
 		StartupGrace:       d.StartupGrace,
 		Cooldown:           d.Cooldown,
+		DryRun:             true,
 		Containers:         spec.Containers,
 		Overrides:          spec.ContainerOverrides,
 		ProfileCapture:     spec.ProfileCapture,
@@ -101,6 +106,11 @@ func ResolvePolicy(d Defaults, spec v1alpha1.MemoryLeakPolicySpec) PodConfig {
 	}
 	if spec.StartupGrace != nil {
 		p.StartupGrace = spec.StartupGrace.Duration
+	}
+	// The API server defaults spec.dryRun to true; the nil check keeps
+	// dry-run the fail-safe for objects built without server defaulting.
+	if spec.DryRun != nil {
+		p.DryRun = *spec.DryRun
 	}
 	return p
 }

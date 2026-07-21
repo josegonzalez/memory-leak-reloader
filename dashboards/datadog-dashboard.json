@@ -7,7 +7,7 @@
     {
       "definition": {
         "type": "note",
-        "content": "memory-leak-reloader exposes Prometheus metrics scraped into Datadog with the `memreload_` prefix. Dry-run shows as `memreload_dryrun=1`.",
+        "content": "memory-leak-reloader exposes Prometheus metrics scraped into Datadog with the `memreload_` prefix. A policy in dry-run shows as `memreload_policy_dryrun{namespace,name}=1`.",
         "background_color": "blue",
         "font_size": "14",
         "text_align": "left"

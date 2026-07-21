@@ -83,6 +83,27 @@ func TestResolvePolicy_Defaults(t *testing.T) {
 	}
 }
 
+func TestResolvePolicy_DryRun(t *testing.T) {
+	boolp := func(b bool) *bool { return &b }
+	cases := []struct {
+		name string
+		spec *bool
+		want bool
+	}{
+		{"nil defaults to dry-run", nil, true},
+		{"explicit true", boolp(true), true},
+		{"explicit false enforces", boolp(false), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := ResolvePolicy(defaults(), v1alpha1.MemoryLeakPolicySpec{DryRun: tc.spec})
+			if p.DryRun != tc.want {
+				t.Errorf("dryRun = %v want %v", p.DryRun, tc.want)
+			}
+		})
+	}
+}
+
 func TestForContainer_PerContainerOverride(t *testing.T) {
 	spec := v1alpha1.MemoryLeakPolicySpec{
 		Detection: v1alpha1.DetectionSpec{ThresholdPercent: 80},

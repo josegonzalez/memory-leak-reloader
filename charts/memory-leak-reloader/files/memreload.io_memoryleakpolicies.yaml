@@ -23,6 +23,9 @@ spec:
     - jsonPath: .spec.workloadRef.name
       name: Name
       type: string
+    - jsonPath: .status.dryRun
+      name: Dry-Run
+      type: boolean
     - jsonPath: .status.restartCount
       name: Count
       type: integer
@@ -150,6 +153,12 @@ spec:
                   window:
                     type: string
                 type: object
+              dryRun:
+                default: true
+                description: |-
+                  DryRun, when true (the default), makes the controller log/notify would-be
+                  restarts for this workload without acting. Set false to enforce restarts.
+                type: boolean
               maintenanceWindows:
                 description: MaintenanceWindows restricts restarts to these windows
                   (empty = always).
@@ -310,6 +319,9 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              dryRun:
+                description: DryRun is the effective mode resolved for this policy.
+                type: boolean
               history:
                 description: Bounded audit trail, newest last, capped at RestartHistoryLimit.
                 items:

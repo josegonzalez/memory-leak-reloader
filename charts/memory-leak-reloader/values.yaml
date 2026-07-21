@@ -21,9 +21,6 @@ scope:
   # -- Required when mode != cluster; drives which namespaces' policies are watched and Role vs ClusterRole.
   namespaces: []
 
-# -- Default: log "would trigger", take no action. Set false to enforce restarts.
-dryRun: true
-
 log:
   # -- Log format: one of logfmt (local), json (Datadog).
   format: json

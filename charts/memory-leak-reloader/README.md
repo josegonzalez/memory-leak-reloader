@@ -13,8 +13,14 @@ A Kubernetes controller that detects per-container memory leaks in opted-in pods
 
 ## Installing the chart
 
-The controller ships in dry-run by default - it logs what it would restart but
-takes no action until you set `dryRun=false`.
+Every `MemoryLeakPolicy` is dry-run by default - the controller logs what it
+would restart but takes no action until a policy sets `spec.dryRun: false`.
+Enforcement is opt-in per workload; there is no chart-level switch.
+
+> **Breaking change**: earlier chart versions had a `dryRun` value that toggled
+> the whole installation. It has been removed and is ignored if still set (for
+> example via `--reuse-values`), so a fleet that had `dryRun=false` reverts to
+> dry-run until each policy sets `spec.dryRun: false`.
 
 ```sh
 helm repo add memreload https://josediazgonzalez.com/memory-leak-reloader
@@ -39,7 +45,6 @@ datasources, credentials, notifications, and troubleshooting guides.
 | crds.install | bool | `true` | Install the MemoryLeakPolicy CRD (set false if managed out-of-band). |
 | scope.mode | string | `"cluster"` | Watch scope: one of cluster, namespaces, single. |
 | scope.namespaces | list | `[]` | Required when mode != cluster; drives which namespaces' policies are watched and Role vs ClusterRole. |
-| dryRun | bool | `true` | Default: log "would trigger", take no action. Set false to enforce restarts. |
 | log.format | string | `"json"` | Log format: one of logfmt (local), json (Datadog). |
 | log.level | string | `"info"` | Log level. |
 | detection.mode | string | `"sustained"` | Default detection mode: one of sustained, trend, combined. |
