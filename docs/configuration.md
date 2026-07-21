@@ -21,6 +21,7 @@ inherits the default.
 | `detection.trendMinGrowth` | `100Mi` | Min projected growth over a window (trend modes). |
 | `cooldown` | `30m` | Per-workload cooldown. |
 | `startupGrace` | `5m` | Ignore pods younger than this. |
+| `dryRun` | `false` | Default `true`: log/notify only. `false` enforces. |
 | `containers` | `["app","worker"]` or `["*"]` | Container set to monitor. |
 | `containerOverrides` | see below | Per-container detection overrides. |
 | `profileCapture` | `true` | Enable/disable pre-restart capture for this workload. |
@@ -29,7 +30,11 @@ inherits the default.
 | `notifyRoutes` | `["team-payments"]` | Named notification routes to target (replaces default sinks). |
 | `slackChannel` | `C0123ABC` | Per-workload Slack channel (bot-token mode); non-secret. See [notifications](notifications.md). |
 
-All fields except `workloadRef` are optional. The spec is schema-validated
+All fields except `workloadRef` are optional. `dryRun` is the one field with an
+API-server default (`true`) rather than a controller default: enforcement is
+opt-in per policy and there is no controller-wide switch. The effective mode is
+exported as `memreload_policy_dryrun{namespace,name}` and shown in the `DRY-RUN`
+column of `kubectl get mlp`. The spec is schema-validated
 (enums, ranges, patterns) by the CRD's OpenAPI schema plus CEL rules, so
 malformed values are rejected at apply time rather than surfaced as runtime
 Events.
@@ -106,8 +111,8 @@ of status and exposed only as Prometheus metrics.
 Inspect it with `kubectl get mlp` (or `kubectl describe mlp <name>`):
 
 ```text
-NAME   WORKLOAD     NAME   COUNT   BREAKER   LAST-RESTART   VERSION
-api    Deployment   api    2       false     5m             1f3a9c2b8d4e6f01
+NAME   WORKLOAD     NAME   DRY-RUN   COUNT   BREAKER   LAST-RESTART   VERSION
+api    Deployment   api    true      2       false     5m             1f3a9c2b8d4e6f01
 ```
 
 The circuit-breaker window resets when the workload's pod-template changes, so a
@@ -124,7 +129,7 @@ The CRD is installed by the chart (`crds.install`, default `true`).
 
 The full set of values is documented in the generated
 [chart README](../charts/memory-leak-reloader/README.md) (regenerate with
-`make helm-docs`). Key groups: `crds`, `scope`, `dryRun`,
+`make helm-docs`). Key groups: `crds`, `scope`,
 `log`, `detection`, `rollout`, `maintenanceWindows`, `profileCapture`,
 `notifications`, `workloads`, `datasource`, `metrics`, `leaderElection`, `rbac`,
 `serviceAccount`, `resources`. These set the controller-wide defaults that a

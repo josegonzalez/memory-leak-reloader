@@ -70,7 +70,6 @@ func run() error {
 		leaderID    = flag.String("leader-election-id", "memory-leak-reloader", "leader election lock name")
 		logFormat   = flag.String("log-format", "logfmt", "log format: logfmt|json")
 		logLevel    = flag.String("log-level", "info", "log level: debug|info|warn|error")
-		dryRun      = flag.Bool("dry-run", true, "log would-be restarts; take no action (default true; set false to enforce)")
 		scopeMode   = flag.String("scope-mode", "cluster", "cluster|namespaces|single")
 		dsType      = flag.String("datasource", "metrics-server", "metrics-server|prometheus|datadog")
 
@@ -163,9 +162,6 @@ func run() error {
 
 	appmetrics.Register(ctrlmetrics.Registry)
 	appmetrics.GlobalCap.Set(float64(*globalMax))
-	if *dryRun {
-		appmetrics.DryRun.Set(1)
-	}
 
 	// Datasource (explicit; no fallback).
 	var metricsClient datasource.MetricsClient
@@ -225,7 +221,7 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("build profile sink: %w", err)
 		}
-		capturer = profile.NewCapturer(sink, *profilePort, *profileTimeout, *dryRun)
+		capturer = profile.NewCapturer(sink, *profilePort, *profileTimeout)
 	}
 
 	notifier, err := buildNotifier(*notifyEvents, *ddSite, *slackDefaultChannel, *notifyRoutesFile)
@@ -255,7 +251,6 @@ func run() error {
 		Capturer:             capturer,
 		ProfileEnabled:       *profileEnabled,
 		Notifier:             notifier,
-		DryRun:               *dryRun,
 		RestartWindow:        *restartWindow,
 		MaxRestartsPerWindow: *maxPerWindow,
 		RequeueAfter:         *requeueAfter,
@@ -293,7 +288,7 @@ func run() error {
 	}
 
 	logger.Info("starting controller",
-		"scope", *scopeMode, "dryRun", *dryRun,
+		"scope", *scopeMode,
 		"datasource", src.Name(), "mode", *mode, "sampleInterval", sampleEvery.String(),
 		"maintenanceWindows", windows.String())
 	return mgr.Start(ctrl.SetupSignalHandler())

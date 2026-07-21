@@ -161,6 +161,12 @@ type MemoryLeakPolicySpec struct {
 	// +optional
 	StartupGrace *metav1.Duration `json:"startupGrace,omitempty"`
 
+	// DryRun, when true (the default), makes the controller log/notify would-be
+	// restarts for this workload without acting. Set false to enforce restarts.
+	// +optional
+	// +kubebuilder:default=true
+	DryRun *bool `json:"dryRun,omitempty"`
+
 	// Containers is the requested monitor set. Empty means default selection; the
 	// literal "*" element means all eligible containers.
 	// +optional
@@ -221,6 +227,9 @@ type MemoryLeakPolicyStatus struct {
 	// Computed observability, surfaced via printer columns.
 	// +optional
 	BreakerTripped bool `json:"breakerTripped,omitempty"`
+	// DryRun is the effective mode resolved for this policy.
+	// +optional
+	DryRun bool `json:"dryRun,omitempty"`
 	// +optional
 	NextEligibleRestart *metav1.Time `json:"nextEligibleRestart,omitempty"`
 	// +optional
@@ -252,6 +261,7 @@ type MemoryLeakPolicyStatus struct {
 // +kubebuilder:resource:shortName=mlp
 // +kubebuilder:printcolumn:name="Workload",type=string,JSONPath=`.spec.workloadRef.kind`
 // +kubebuilder:printcolumn:name="Name",type=string,JSONPath=`.spec.workloadRef.name`
+// +kubebuilder:printcolumn:name="Dry-Run",type=boolean,JSONPath=`.status.dryRun`
 // +kubebuilder:printcolumn:name="Count",type=integer,JSONPath=`.status.restartCount`
 // +kubebuilder:printcolumn:name="Breaker",type=boolean,JSONPath=`.status.breakerTripped`
 // +kubebuilder:printcolumn:name="Last-Restart",type=date,JSONPath=`.status.lastRestartAt`

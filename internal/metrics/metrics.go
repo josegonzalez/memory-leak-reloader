@@ -79,11 +79,11 @@ var (
 		Help: "Total datasource errors, by source.",
 	}, []string{"source"})
 
-	// DryRun is 1 when the controller is running in dry-run mode, else 0.
-	DryRun = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "memreload_dryrun",
-		Help: "1 if the controller is running in dry-run mode, else 0.",
-	})
+	// PolicyDryRun is 1 when the effective mode for a MemoryLeakPolicy is dry-run.
+	PolicyDryRun = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "memreload_policy_dryrun",
+		Help: "1 if the effective mode for a MemoryLeakPolicy is dry-run, else 0.",
+	}, []string{"namespace", "name"})
 )
 
 // collectors lists every collector for bulk registration.
@@ -91,7 +91,7 @@ func collectors() []prometheus.Collector {
 	return []prometheus.Collector{
 		PodsMonitored, ThresholdBreaches, RolloutsTriggered, RolloutsSkipped,
 		RolloutsDeferred, ProfileCaptures, Notifications, ContainersIgnored,
-		InflightRollouts, GlobalCap, SampleBufferSeries, DatasourceErrors, DryRun,
+		InflightRollouts, GlobalCap, SampleBufferSeries, DatasourceErrors, PolicyDryRun,
 	}
 }
 

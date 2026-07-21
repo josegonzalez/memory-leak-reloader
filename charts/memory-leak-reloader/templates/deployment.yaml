@@ -51,7 +51,6 @@ spec:
             - --health-probe-bind-address={{ .Values.healthProbeBindAddress }}
             - --leader-elect={{ .Values.leaderElection.enabled }}
             - --leader-election-id={{ .Values.leaderElection.id }}
-            - --dry-run={{ .Values.dryRun }}
             - --scope-mode={{ .Values.scope.mode }}
             {{- range .Values.scope.namespaces }}
             - --namespace={{ . }}

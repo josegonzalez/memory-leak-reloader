@@ -18,7 +18,7 @@ When developing against a local checkout, install from the chart path
 - `single`: a single namespace.
 
 ```sh
-# cluster-wide (dry-run is the default)
+# cluster-wide
 helm install memreload memreload/memory-leak-reloader \
   -n memreload-system --create-namespace
 
@@ -33,13 +33,16 @@ in the cache so the leader-election lease is reachable.
 
 ## Recommended rollout
 
-1. Install with defaults. Dry-run is on by default: the controller samples,
-   evaluates, and logs `WouldRestart` (and emits the same Events + metrics, plus
-   clearly-labeled notifications if a sink is configured) but takes no action.
+1. Install with defaults.
 2. Create a `MemoryLeakPolicy` for each workload you want managed (see
-   [configuration](configuration.md)), then confirm the right workloads are
-   flagged and thresholds are sane.
-3. `helm upgrade --reuse-values --set dryRun=false` to enforce.
+   [configuration](configuration.md)). Policies are dry-run by default: the
+   controller samples, evaluates, and logs `WouldRestart` (and emits the same
+   Events + metrics, plus clearly-labeled notifications if a sink is configured)
+   but takes no action. Confirm the right workloads are flagged and thresholds
+   are sane.
+3. Enforce per workload by setting `spec.dryRun: false` on its policy, e.g.
+   `kubectl -n <ns> patch mlp <name> --type=merge -p '{"spec":{"dryRun":false}}'`.
+   There is no chart-level enforce switch.
 
 ## RBAC
 

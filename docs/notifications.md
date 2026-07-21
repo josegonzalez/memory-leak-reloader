@@ -2,8 +2,9 @@
 
 Optional outbound alerts on restart decisions. Delivery is best-effort and
 time-boxed; failures never block remediation and are recorded by
-`memreload_notifications_total{sink,result}`. In dry-run, notifications still
-fire but are clearly labeled "would restart".
+`memreload_notifications_total{sink,result}`. When a policy is in dry-run (the
+default), notifications still fire but are clearly labeled "would restart"; the
+label reflects each policy's effective mode.
 
 Sinks: Slack (incoming webhook or bot token), generic webhook (JSON POST),
 Datadog Events. Events fired default to `RestartTriggered` and
@@ -41,7 +42,9 @@ accessibility.
 ```
 
 Both raw byte counts and humanized strings are included; internal routing fields
-are never sent. An optional `Authorization` header is added when configured.
+are never sent. The `dryRun` field is the policy's effective mode (its
+`spec.dryRun`, default `true`). An optional `Authorization` header is added when
+configured.
 
 ```yaml
 notifications:

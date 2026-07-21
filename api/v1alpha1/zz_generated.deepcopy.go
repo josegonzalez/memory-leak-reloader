@@ -167,6 +167,11 @@ func (in *MemoryLeakPolicySpec) DeepCopyInto(out *MemoryLeakPolicySpec) {
 		*out = new(v1.Duration)
 		**out = **in
 	}
+	if in.DryRun != nil {
+		in, out := &in.DryRun, &out.DryRun
+		*out = new(bool)
+		**out = **in
+	}
 	if in.Containers != nil {
 		in, out := &in.Containers, &out.Containers
 		*out = make([]string, len(*in))

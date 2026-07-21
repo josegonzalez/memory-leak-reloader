@@ -7,7 +7,7 @@
 | Event | Meaning |
 |-------|---------|
 | `BreachDetected` | A watched container crossed its threshold/trend. |
-| `WouldRestart` | Dry-run: a restart would have been triggered. |
+| `WouldRestart` | Dry-run (the default): a restart would have fired. |
 | `RestartTriggered` | A rollout restart was dispatched. |
 | `RestartSkipped` | A gate blocked the restart (see reason). |
 | `RestartDeferred` | Outside the maintenance window; re-queued. |
@@ -45,4 +45,10 @@ Scrape `:8080/metrics`. Key series: `memreload_pods_monitored`,
 `memreload_threshold_breaches_total`, `memreload_rollouts_triggered_total`,
 `memreload_rollouts_skipped_total`, `memreload_inflight_rollouts`,
 `memreload_global_cap`, `memreload_sample_buffer_series`,
-`memreload_datasource_errors_total`, `memreload_dryrun`.
+`memreload_datasource_errors_total`, `memreload_policy_dryrun{namespace,name}`
+(the effective per-policy mode; also shown in the `DRY-RUN` column of
+`kubectl get mlp`).
+
+Note: dry-run keeps no persisted cooldown state, so a policy flipped from
+dry-run to enforce may restart its workload immediately on the next detected
+breach.
