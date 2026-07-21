@@ -1,0 +1,37 @@
+{{ template "chart.header" . }}
+
+{{ template "chart.badgesSection" . }}
+
+{{ template "chart.description" . }}
+
+{{ template "chart.homepageLine" . }}
+
+## Prerequisites
+
+- Kubernetes with metrics-server (the default datasource), or Prometheus / Datadog credentials
+- Helm 3
+
+## Installing the chart
+
+The controller ships in dry-run by default - it logs what it would restart but
+takes no action until you set `dryRun=false`.
+
+```sh
+helm install memreload ./charts/memory-leak-reloader \
+  --namespace memreload-system --create-namespace
+```
+
+## Documentation
+
+See the repository [docs](../../docs/README.md) for installation, configuration,
+datasources, credentials, notifications, and troubleshooting guides.
+
+{{ template "chart.requirementsSection" . }}
+
+{{ template "chart.valuesSection" . }}
+
+{{ template "chart.maintainersSection" . }}
+
+{{ template "chart.sourcesSection" . }}
+
+{{ template "helm-docs.versionFooter" . }}
