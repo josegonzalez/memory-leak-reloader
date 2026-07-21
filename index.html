@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>memory-leak-reloader helm repository</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2328;
+    --muted: #59636e;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117;
+      --fg: #f0f6fc;
+      --muted: #9198a1;
+      --border: #3d444d;
+      --code-bg: #151b23;
+      --link: #4493f8;
+    }
+  }
+  body {
+    margin: 0 auto;
+    padding: 2rem 1rem 4rem;
+    max-width: 760px;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+  }
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.2rem; margin-top: 2rem; }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  p.muted, footer { color: var(--muted); font-size: 0.875rem; }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    overflow-x: auto;
+    font-size: 0.85rem;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+    margin: 0.5rem 0 1.5rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid var(--border);
+  }
+  th { color: var(--muted); font-weight: 600; }
+  footer { margin-top: 3rem; border-top: 1px solid var(--border); padding-top: 1rem; }
+  #status { color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>memory-leak-reloader helm repository</h1>
+<p class="muted">Charts in this repository are published from
+<a href="https://github.com/josegonzalez/memory-leak-reloader">josegonzalez/memory-leak-reloader</a>.
+The machine-readable index is <a href="index.yaml">index.yaml</a>.</p>
+
+<h2>Add the repository</h2>
+<pre><code>helm repo add memreload https://josediazgonzalez.com/memory-leak-reloader
+helm repo update</code></pre>
+
+<h2>Charts</h2>
+<div id="charts"><p id="status">Loading index.yaml…</p></div>
+
+<footer>
+  Generated in your browser from <a href="index.yaml">index.yaml</a>.
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+<script>
+(async function () {
+  const container = document.getElementById('charts');
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+  try {
+    const resp = await fetch('index.yaml', { cache: 'no-store' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status + ' fetching index.yaml');
+    const index = jsyaml.load(await resp.text());
+    const entries = index && index.entries ? index.entries : {};
+    const names = Object.keys(entries).sort();
+    if (names.length === 0) {
+      container.innerHTML = '<p id="status">The repository index is empty.</p>';
+      return;
+    }
+    let html = '';
+    for (const name of names) {
+      const versions = entries[name].slice().sort((a, b) =>
+        new Date(b.created || 0) - new Date(a.created || 0));
+      const latest = versions[0] || {};
+      html += '<h3><code>' + esc(name) + '</code></h3>';
+      if (latest.description) html += '<p>' + esc(latest.description) + '</p>';
+      html += '<pre><code>helm install ' + esc(name) + ' memreload/' + esc(name) +
+        '</code></pre>';
+      html += '<table><thead><tr>' +
+        '<th>Chart version</th><th>App version</th><th>Released</th><th>Package</th>' +
+        '</tr></thead><tbody>';
+      for (const v of versions) {
+        const url = (v.urls && v.urls[0]) || '';
+        const file = url ? url.split('/').pop() : '';
+        const released = v.created ? new Date(v.created).toISOString().slice(0, 10) : '';
+        html += '<tr>' +
+          '<td>' + esc(v.version) + '</td>' +
+          '<td>' + esc(v.appVersion) + '</td>' +
+          '<td>' + esc(released) + '</td>' +
+          '<td>' + (url ? '<a href="' + esc(url) + '">' + esc(file) + '</a>' : '') + '</td>' +
+          '</tr>';
+      }
+      html += '</tbody></table>';
+    }
+    container.innerHTML = html;
+  } catch (err) {
+    container.innerHTML = '<p id="status">Failed to load index.yaml: ' +
+      esc(err.message) + '</p>';
+  }
+})();
+</script>
+</body>
+</html>
