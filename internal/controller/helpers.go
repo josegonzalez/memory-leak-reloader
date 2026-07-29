@@ -12,12 +12,9 @@ import (
 	"github.com/josegonzalez/memory-leak-reloader/internal/sampling"
 )
 
-// toSamplePoints converts a sample series to the decoupled notification points
-// (nil in, nil out), keeping order.
+// toSamplePoints converts a sample series to the decoupled notification
+// points, keeping order.
 func toSamplePoints(in []sampling.Sample) []notify.SamplePoint {
-	if in == nil {
-		return nil
-	}
 	out := make([]notify.SamplePoint, len(in))
 	for i, s := range in {
 		out[i] = notify.SamplePoint{Time: s.Time, Bytes: s.WorkingSet}

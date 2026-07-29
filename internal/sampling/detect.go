@@ -51,8 +51,9 @@ func thresholdBytes(s Sample, d config.Detection) int64 {
 	return 0
 }
 
-// windowSamples returns the samples within [now-window, now], oldest first.
-func windowSamples(samples []Sample, window time.Duration, now time.Time) []Sample {
+// WindowSamples returns the samples within [now-window, now], oldest first.
+// It is the slice Detect evaluates once a series is warm.
+func WindowSamples(samples []Sample, window time.Duration, now time.Time) []Sample {
 	cutoff := now.Add(-window)
 	out := make([]Sample, 0, len(samples))
 	for _, s := range samples {
@@ -84,7 +85,7 @@ func Detect(samples []Sample, d config.Detection, now time.Time) Result {
 	if !WindowCovered(samples, d.Window, now) {
 		return res // warming up
 	}
-	win := windowSamples(samples, d.Window, now)
+	win := WindowSamples(samples, d.Window, now)
 	if len(win) < 2 {
 		return res
 	}

@@ -7,10 +7,11 @@ import (
 	"github.com/guptarohit/asciigraph"
 )
 
+// The height/width bounds keep the largest possible chart well under Slack's
+// 3000-character section text limit.
 const (
 	chartHeight   = 8
 	chartMaxWidth = 60
-	chartMaxChars = 2900 // stay under Slack's 3000-char section text limit
 )
 
 // renderChart renders the series as a unicode line chart for a Slack code
@@ -34,9 +35,5 @@ func renderChart(points []SamplePoint, threshold int64) string {
 	if len(points) > chartMaxWidth {
 		opts = append(opts, asciigraph.Width(chartMaxWidth))
 	}
-	chart := asciigraph.Plot(data, opts...)
-	if len(chart) > chartMaxChars {
-		return ""
-	}
-	return chart
+	return asciigraph.Plot(data, opts...)
 }
