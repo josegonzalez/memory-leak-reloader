@@ -28,6 +28,7 @@ import (
 	"github.com/josegonzalez/memory-leak-reloader/internal/controller"
 	"github.com/josegonzalez/memory-leak-reloader/internal/gate"
 	"github.com/josegonzalez/memory-leak-reloader/internal/metrics"
+	"github.com/josegonzalez/memory-leak-reloader/internal/notify"
 	"github.com/josegonzalez/memory-leak-reloader/internal/restart"
 	"github.com/josegonzalez/memory-leak-reloader/internal/sampling"
 )
@@ -235,6 +236,45 @@ func TestReconcile_TriggersRestartOnLeak(t *testing.T) {
 	}
 	if got := testutil.ToFloat64(metrics.ThresholdBreaches.WithLabelValues(ns, "Deployment", "api", string(config.ModeSustained))); got != 1 {
 		t.Errorf("threshold breaches counter = %v want 1", got)
+	}
+}
+
+// recordingSink captures delivered notifications for assertions.
+type recordingSink struct{ events []notify.Event }
+
+func (r *recordingSink) Name() string { return "recording" }
+func (r *recordingSink) Send(_ context.Context, e notify.Event) error {
+	r.events = append(r.events, e)
+	return nil
+}
+
+func TestReconcile_NotificationCarriesSamples(t *testing.T) {
+	c, stop := startEnv(t)
+	defer stop()
+	ctx := context.Background()
+	const ns = "notify-samples"
+
+	r := seedLeakingDeployment(t, c, ns)
+	rec := &recordingSink{}
+	r.Notifier = notify.New([]notify.Sink{rec}, nil, []notify.EventType{notify.EventRestartTriggered}, time.Second)
+
+	if _, err := r.Reconcile(ctx, policyRequest(ns)); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if len(rec.events) != 1 {
+		t.Fatalf("want 1 notification, got %d", len(rec.events))
+	}
+	e := rec.events[0]
+	if len(e.Samples) != 13 {
+		t.Fatalf("event should carry the seeded 13-sample series, got %d", len(e.Samples))
+	}
+	for i, p := range e.Samples {
+		if p.Bytes != 95*mib {
+			t.Errorf("sample %d bytes = %d want %d", i, p.Bytes, 95*mib)
+		}
+		if i > 0 && p.Time.Before(e.Samples[i-1].Time) {
+			t.Errorf("samples should be oldest-first: %d before %d", i, i-1)
+		}
 	}
 }
 

@@ -20,10 +20,22 @@ where an event came from. When unset (the default) it is omitted everywhere.
 (`{"text": <fallback>, "blocks": [...]}`): a header (`:recycle: Restart
 triggered`, or `:mag: Would restart` in dry-run), a summary section, a
 two-column fields section (Observed / Threshold / Mode / Window, with sizes
-humanized to `Mi`/`Gi`), a context line (reason · source · timestamp), and a
-divider. The `text` field is a plain-text fallback for notifications and
-accessibility. With `clusterName` configured, the summary line reads
-`*api* in *payments* on *prod-eu*  ·  Deployment`.
+humanized to `Mi`/`Gi`), a monospaced line chart of the sampled working-set
+series that drove the decision (a unicode chart in a code block, y-axis
+humanized to `Mi`/`Gi`, threshold in the caption; omitted when no series is
+available), a context line (reason · source · timestamp), and a divider. The
+`text` field is a plain-text fallback for notifications and accessibility; it
+does not include the chart. With `clusterName` configured, the summary line
+reads `*api* in *payments* on *prod-eu*  ·  Deployment`.
+
+```text
+  940Mi ┤             ╭─
+  880Mi ┤         ╭─╯
+  820Mi ┤     ╭─╯
+  760Mi ┤  ╭─╯
+  700Mi ┼╯
+         working set over 15m0s · threshold 860Mi
+```
 
 **Generic webhook** POSTs a stable JSON document:
 

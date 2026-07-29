@@ -7,8 +7,23 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/josegonzalez/memory-leak-reloader/internal/notify"
 	"github.com/josegonzalez/memory-leak-reloader/internal/restart"
+	"github.com/josegonzalez/memory-leak-reloader/internal/sampling"
 )
+
+// toSamplePoints converts a sample series to the decoupled notification points
+// (nil in, nil out), keeping order.
+func toSamplePoints(in []sampling.Sample) []notify.SamplePoint {
+	if in == nil {
+		return nil
+	}
+	out := make([]notify.SamplePoint, len(in))
+	for i, s := range in {
+		out[i] = notify.SamplePoint{Time: s.Time, Bytes: s.WorkingSet}
+	}
+	return out
+}
 
 // listWorkloadPods lists the pods belonging to a workload using its pod
 // selector. It reads through the given client, which is configured to bypass

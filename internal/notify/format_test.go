@@ -56,6 +56,35 @@ func TestBuildSlackBlocks_Structure(t *testing.T) {
 	}
 }
 
+func TestBuildSlackBlocks_WithSamples(t *testing.T) {
+	e := sampleFull()
+	base := time.Date(2026, 1, 1, 11, 45, 0, 0, time.UTC)
+	for i := 0; i < 16; i++ {
+		e.Samples = append(e.Samples, SamplePoint{Time: base.Add(time.Duration(i) * time.Minute), Bytes: int64(700+i*16) * 1024 * 1024})
+	}
+	blocks, fallback := buildSlackBlocks(e)
+	if len(blocks) != 6 {
+		t.Fatalf("want 6 blocks with a chart section, got %d", len(blocks))
+	}
+	if blocks[3]["type"] != "section" {
+		t.Fatalf("chart block should be a section: %#v", blocks[3])
+	}
+	text := blocks[3]["text"].(map[string]any)["text"].(string)
+	if !strings.HasPrefix(text, "```\n") || !strings.HasSuffix(text, "\n```") {
+		t.Errorf("chart should be fenced as a code block: %q", text)
+	}
+	if blocks[4]["type"] != "context" || blocks[5]["type"] != "divider" {
+		t.Fatalf("context/divider should follow the chart: %v / %v", blocks[4]["type"], blocks[5]["type"])
+	}
+	// The fallback stays short: no chart in the accessibility text.
+	if strings.Contains(fallback, "┤") {
+		t.Errorf("fallback should not carry the chart: %q", fallback)
+	}
+	if _, err := json.Marshal(map[string]any{"text": fallback, "blocks": blocks}); err != nil {
+		t.Fatalf("blocks not JSON-marshalable: %v", err)
+	}
+}
+
 func TestBuildSlackBlocks_ClusterName(t *testing.T) {
 	e := sampleFull()
 	e.ClusterName = "prod-eu"
@@ -90,7 +119,9 @@ func TestThresholdDashWhenZero(t *testing.T) {
 }
 
 func TestWebhookPayload_Shape(t *testing.T) {
-	p := webhookPayloadFor(sampleFull())
+	e := sampleFull()
+	e.Samples = []SamplePoint{{Time: e.Time, Bytes: e.Observed}}
+	p := webhookPayloadFor(e)
 	if p.Type != "RestartTriggered" || p.WorkloadKind != "Deployment" || p.Workload != "api" {
 		t.Errorf("payload identity wrong: %+v", p)
 	}
@@ -103,10 +134,10 @@ func TestWebhookPayload_Shape(t *testing.T) {
 	if p.Time != "2026-01-01T12:00:05Z" {
 		t.Errorf("time = %q", p.Time)
 	}
-	// Confirm internal routing fields are not present in the wire format, and
-	// clusterName is omitted when unset.
+	// Confirm internal routing fields and the chart series are not present in
+	// the wire format, and clusterName is omitted when unset.
 	b, _ := json.Marshal(p)
-	for _, leaked := range []string{"Routes", "SlackChannel", "routes", "slackChannel", "clusterName"} {
+	for _, leaked := range []string{"Routes", "SlackChannel", "routes", "slackChannel", "clusterName", "Samples", "samples"} {
 		if containsKey(b, leaked) {
 			t.Errorf("webhook payload leaked internal field %q: %s", leaked, b)
 		}
