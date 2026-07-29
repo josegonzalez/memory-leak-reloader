@@ -265,8 +265,8 @@ func TestReconcile_NotificationCarriesSamples(t *testing.T) {
 		t.Fatalf("want 1 notification, got %d", len(rec.events))
 	}
 	e := rec.events[0]
-	if len(e.Samples) != 13 {
-		t.Fatalf("event should carry the seeded 13-sample series, got %d", len(e.Samples))
+	if len(e.Samples) < 2 {
+		t.Fatalf("event should carry the sampled series, got %d samples", len(e.Samples))
 	}
 	for i, p := range e.Samples {
 		if p.Bytes != 95*mib {
@@ -275,6 +275,12 @@ func TestReconcile_NotificationCarriesSamples(t *testing.T) {
 		if i > 0 && p.Time.Before(e.Samples[i-1].Time) {
 			t.Errorf("samples should be oldest-first: %d before %d", i, i-1)
 		}
+	}
+	// Only the windowed slice that drove the decision is carried; the seeded
+	// series spans longer than the detection window.
+	window := r.Defaults.Detection.Window
+	if span := e.Samples[len(e.Samples)-1].Time.Sub(e.Samples[0].Time); span > window {
+		t.Errorf("samples span %s, should be within the %s detection window", span, window)
 	}
 }
 

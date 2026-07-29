@@ -234,7 +234,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				breach = &targets[j]
 				breachPod = pod
 				result = res
-				breachSamples = samples
+				// Chart the windowed slice Detect evaluated, not the full
+				// retained series, so notifications match the decision.
+				breachSamples = sampling.WindowSamples(samples, targets[j].Det.Window, now)
 				break
 			}
 		}

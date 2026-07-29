@@ -72,8 +72,9 @@ func TestRenderChart_LongSeriesBounded(t *testing.T) {
 	if chart == "" {
 		t.Fatal("long series should downsample, not disappear")
 	}
-	if len(chart) > chartMaxChars {
-		t.Errorf("chart too large for a Slack section: %d chars", len(chart))
+	// Slack section text is capped at 3000 characters.
+	if n := len([]rune(chart)); n > 3000 {
+		t.Errorf("chart too large for a Slack section: %d chars", n)
 	}
 	for _, line := range strings.Split(chart, "\n") {
 		if n := len([]rune(line)); n > chartMaxWidth+20 {

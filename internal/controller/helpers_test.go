@@ -8,8 +8,8 @@ import (
 )
 
 func TestToSamplePoints(t *testing.T) {
-	if got := toSamplePoints(nil); got != nil {
-		t.Errorf("nil in should be nil out, got %#v", got)
+	if got := toSamplePoints(nil); len(got) != 0 {
+		t.Errorf("nil in should yield no points, got %#v", got)
 	}
 
 	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
