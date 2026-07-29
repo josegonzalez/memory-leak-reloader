@@ -278,7 +278,7 @@ func TestReconcile_NotificationCarriesSamples(t *testing.T) {
 	}
 	// Only the windowed slice that drove the decision is carried; the seeded
 	// series spans longer than the detection window.
-	window := r.Defaults.Detection.Window
+	window := r.Defaults.Window
 	if span := e.Samples[len(e.Samples)-1].Time.Sub(e.Samples[0].Time); span > window {
 		t.Errorf("samples span %s, should be within the %s detection window", span, window)
 	}
