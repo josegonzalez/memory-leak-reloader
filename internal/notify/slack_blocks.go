@@ -57,6 +57,9 @@ func slackHeader(e Event) (emoji, verb string) {
 
 func slackSummary(e Event) string {
 	head := fmt.Sprintf("*%s* in *%s*  ·  %s", e.Workload, e.Namespace, e.Kind)
+	if e.ClusterName != "" {
+		head = fmt.Sprintf("*%s* in *%s* on *%s*  ·  %s", e.Workload, e.Namespace, e.ClusterName, e.Kind)
+	}
 	var line string
 	switch e.Type {
 	case EventRestartDeferred:

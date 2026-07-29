@@ -69,6 +69,10 @@ type Reconciler struct {
 
 	Notifier *notify.Notifier
 
+	// ClusterName is the operator-defined cluster name stamped onto
+	// notifications; empty omits it.
+	ClusterName string
+
 	RestartWindow        time.Duration
 	MaxRestartsPerWindow int
 	RequeueAfter         time.Duration
@@ -430,6 +434,7 @@ func (r *Reconciler) notify(ctx context.Context, t notify.EventType, wl *restart
 		Reason:       result.Reason,
 		DryRun:       podCfg.DryRun,
 		Time:         now,
+		ClusterName:  r.ClusterName,
 		Routes:       routes,
 		SlackChannel: podCfg.SlackChannel,
 	})

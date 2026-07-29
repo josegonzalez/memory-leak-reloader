@@ -2,6 +2,7 @@ package notify
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -55,6 +56,23 @@ func TestBuildSlackBlocks_Structure(t *testing.T) {
 	}
 }
 
+func TestBuildSlackBlocks_ClusterName(t *testing.T) {
+	e := sampleFull()
+	e.ClusterName = "prod-eu"
+	blocks, fallback := buildSlackBlocks(e)
+	summary := blocks[1]["text"].(map[string]any)["text"].(string)
+	if !strings.Contains(summary, "on *prod-eu*") {
+		t.Errorf("summary should name the cluster: %q", summary)
+	}
+	if !strings.Contains(fallback, "[prod-eu]") {
+		t.Errorf("fallback should carry the cluster suffix: %q", fallback)
+	}
+	// The cluster rides the summary line; the 2x2 fields grid must not grow.
+	if fields, ok := blocks[2]["fields"].([]map[string]any); !ok || len(fields) != 4 {
+		t.Fatalf("fields section changed shape: %#v", blocks[2])
+	}
+}
+
 func TestBuildSlackBlocks_DryRunHeader(t *testing.T) {
 	e := sampleFull()
 	e.DryRun = true
@@ -85,11 +103,89 @@ func TestWebhookPayload_Shape(t *testing.T) {
 	if p.Time != "2026-01-01T12:00:05Z" {
 		t.Errorf("time = %q", p.Time)
 	}
-	// Confirm internal routing fields are not present in the wire format.
+	// Confirm internal routing fields are not present in the wire format, and
+	// clusterName is omitted when unset.
 	b, _ := json.Marshal(p)
-	for _, leaked := range []string{"Routes", "SlackChannel", "routes", "slackChannel"} {
+	for _, leaked := range []string{"Routes", "SlackChannel", "routes", "slackChannel", "clusterName"} {
 		if containsKey(b, leaked) {
 			t.Errorf("webhook payload leaked internal field %q: %s", leaked, b)
+		}
+	}
+}
+
+func TestWebhookPayload_ClusterName(t *testing.T) {
+	e := sampleFull()
+	e.ClusterName = "prod-eu"
+	p := webhookPayloadFor(e)
+	if p.ClusterName != "prod-eu" {
+		t.Errorf("clusterName = %q want prod-eu", p.ClusterName)
+	}
+	b, _ := json.Marshal(p)
+	if !containsKey(b, "clusterName") {
+		t.Errorf("marshaled payload missing clusterName: %s", b)
+	}
+}
+
+func TestTitle_ClusterSuffix(t *testing.T) {
+	e := sampleFull()
+	if got := e.Title(); strings.Contains(got, "[") {
+		t.Errorf("title without cluster should have no suffix: %q", got)
+	}
+	e.ClusterName = "prod-eu"
+	e.DryRun = true
+	got := e.Title()
+	if !strings.HasPrefix(got, "[dry-run]") || !strings.HasSuffix(got, "[prod-eu]") {
+		t.Errorf("dry-run prefix and cluster suffix should coexist: %q", got)
+	}
+}
+
+func hasTag(tags []string, want string) bool {
+	for _, tag := range tags {
+		if tag == want {
+			return true
+		}
+	}
+	return false
+}
+
+func TestDatadogEventPayload_StandardTags(t *testing.T) {
+	e := sampleFull()
+	e.ClusterName = "prod-eu"
+	tags := datadogEventPayloadFor(e)["tags"].([]string)
+	// Standard agent keys plus the kind-agnostic workload/kind pair.
+	for _, want := range []string{
+		"kube_namespace:payments",
+		"kube_container_name:app",
+		"kube_deployment:api",
+		"kube_cluster_name:prod-eu",
+		"workload:api",
+		"kind:Deployment",
+	} {
+		if !hasTag(tags, want) {
+			t.Errorf("tags missing %q: %v", want, tags)
+		}
+	}
+
+	for _, tag := range datadogEventPayloadFor(sampleFull())["tags"].([]string) {
+		if strings.HasPrefix(tag, "kube_cluster_name:") {
+			t.Errorf("unset cluster should add no tag, got %q", tag)
+		}
+	}
+}
+
+func TestDatadogEventPayload_KindTags(t *testing.T) {
+	sts := sampleFull()
+	sts.Kind = "StatefulSet"
+	tags := datadogEventPayloadFor(sts)["tags"].([]string)
+	if !hasTag(tags, "kube_stateful_set:api") {
+		t.Errorf("tags missing kube_stateful_set:api: %v", tags)
+	}
+
+	ro := sampleFull()
+	ro.Kind = "Rollout"
+	for _, tag := range datadogEventPayloadFor(ro)["tags"].([]string) {
+		if strings.HasPrefix(tag, "kube_deployment:") || strings.HasPrefix(tag, "kube_stateful_set:") {
+			t.Errorf("rollout should get no kind-specific tag, got %q", tag)
 		}
 	}
 }

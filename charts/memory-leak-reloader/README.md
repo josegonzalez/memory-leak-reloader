@@ -42,6 +42,7 @@ datasources, credentials, notifications, and troubleshooting guides.
 | image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
 | imagePullSecrets | list | `[]` | Image pull secrets for the controller pod. |
 | replicaCount | int | `2` | Controller replicas; 2+ only meaningful with leaderElection.enabled (only the leader samples and acts). |
+| clusterName | string | `""` | Human-readable name of the cluster this controller runs in; included in all notifications (Slack, webhook, Datadog). Empty = omitted. |
 | crds.install | bool | `true` | Install the MemoryLeakPolicy CRD (set false if managed out-of-band). |
 | scope.mode | string | `"cluster"` | Watch scope: one of cluster, namespaces, single. |
 | scope.namespaces | list | `[]` | Required when mode != cluster; drives which namespaces' policies are watched and Role vs ClusterRole. |

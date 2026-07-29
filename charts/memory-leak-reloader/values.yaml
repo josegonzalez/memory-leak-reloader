@@ -10,6 +10,8 @@ image:
 imagePullSecrets: []
 # -- Controller replicas; 2+ only meaningful with leaderElection.enabled (only the leader samples and acts).
 replicaCount: 2
+# -- Human-readable name of the cluster this controller runs in; included in all notifications (Slack, webhook, Datadog). Empty = omitted.
+clusterName: ""
 
 crds:
   # -- Install the MemoryLeakPolicy CRD (set false if managed out-of-band).

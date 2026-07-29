@@ -36,6 +36,10 @@ type Event struct {
 	DryRun    bool
 	Time      time.Time
 
+	// ClusterName is the operator-defined name of the cluster the controller
+	// runs in; empty means it is omitted from every sink.
+	ClusterName string
+
 	// Per-pod routing selectors (non-secret). Routes names a set of named routes
 	// to target instead of the default sinks; SlackChannel overrides the channel
 	// on a Slack bot sink in the target set.
@@ -49,7 +53,11 @@ func (e Event) Title() string {
 	if e.DryRun {
 		prefix = "[dry-run] would restart: "
 	}
-	return fmt.Sprintf("%s%s %s/%s (%s)", prefix, e.Type, e.Namespace, e.Workload, e.Kind)
+	s := fmt.Sprintf("%s%s %s/%s (%s)", prefix, e.Type, e.Namespace, e.Workload, e.Kind)
+	if e.ClusterName != "" {
+		s += " [" + e.ClusterName + "]"
+	}
+	return s
 }
 
 // Body renders a detail string shared by all sinks.

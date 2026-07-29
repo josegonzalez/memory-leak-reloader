@@ -10,6 +10,10 @@ Sinks: Slack (incoming webhook or bot token), generic webhook (JSON POST),
 Datadog Events. Events fired default to `RestartTriggered` and
 `CircuitBreakerTripped`; add `RestartDeferred` if desired.
 
+Set the top-level `clusterName` value to stamp an operator-defined cluster
+name onto every notification so receivers shared across clusters can tell
+where an event came from. When unset (the default) it is omitted everywhere.
+
 ## Message formats
 
 **Slack** (incoming webhook and bot token) posts a Block Kit message
@@ -18,7 +22,8 @@ triggered`, or `:mag: Would restart` in dry-run), a summary section, a
 two-column fields section (Observed / Threshold / Mode / Window, with sizes
 humanized to `Mi`/`Gi`), a context line (reason · source · timestamp), and a
 divider. The `text` field is a plain-text fallback for notifications and
-accessibility.
+accessibility. With `clusterName` configured, the summary line reads
+`*api* in *payments* on *prod-eu*  ·  Deployment`.
 
 **Generic webhook** POSTs a stable JSON document:
 
@@ -37,16 +42,25 @@ accessibility.
   "window": "10m0s",
   "reason": "working set stayed above threshold for the full window",
   "dryRun": true,
-  "time": "2026-01-01T12:00:05Z"
+  "time": "2026-01-01T12:00:05Z",
+  "clusterName": "prod-eu"
 }
 ```
 
 Both raw byte counts and humanized strings are included; internal routing fields
 are never sent. The `dryRun` field is the policy's effective mode (its
-`spec.dryRun`, default `true`). An optional `Authorization` header is added when
-configured.
+`spec.dryRun`, default `true`). `clusterName` is omitted when unset. An
+optional `Authorization` header is added when configured.
+
+**Datadog Events** are tagged with the agent's standard Kubernetes keys
+(`kube_namespace`, `kube_container_name`, `kube_deployment` /
+`kube_stateful_set` by kind, and `kube_cluster_name` when `clusterName` is
+set) so they correlate with agent-tagged metrics and logs, plus kind-agnostic
+`workload`/`kind` tags. The cluster also appears as a `[prod-eu]` suffix on
+the event title.
 
 ```yaml
+clusterName: prod-eu
 notifications:
   events: [RestartTriggered, CircuitBreakerTripped]
   slack:
