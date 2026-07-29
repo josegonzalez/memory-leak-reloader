@@ -55,6 +55,9 @@ spec:
             {{- range .Values.scope.namespaces }}
             - --namespace={{ . }}
             {{- end }}
+            {{- if .Values.clusterName }}
+            - --cluster-name={{ .Values.clusterName }}
+            {{- end }}
             - --datasource={{ $ds.type }}
             - --mode={{ .Values.detection.mode }}
             - --threshold-percent={{ .Values.detection.thresholdPercent }}

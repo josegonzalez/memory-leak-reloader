@@ -107,6 +107,7 @@ func run() error {
 		profileVolume   = flag.String("profile-volume-dir", "/var/run/memreload/profiles", "volume sink dir")
 
 		notifyEvents        = flag.String("notify-events", "RestartTriggered,CircuitBreakerTripped", "comma-separated event types to notify")
+		clusterName         = flag.String("cluster-name", "", "operator-defined cluster name included in notifications; empty to omit")
 		slackDefaultChannel = flag.String("slack-default-channel", "", "default Slack channel (bot-token mode) when a pod sets none")
 		notifyRoutesFile    = flag.String("notify-routes-file", "/etc/memreload/routes/routes.json", "path to the named-route registry (routes.json)")
 	)
@@ -256,6 +257,7 @@ func run() error {
 		Capturer:             capturer,
 		ProfileEnabled:       *profileEnabled,
 		Notifier:             notifier,
+		ClusterName:          *clusterName,
 		RestartWindow:        *restartWindow,
 		MaxRestartsPerWindow: *maxPerWindow,
 		RequeueAfter:         *requeueAfter,

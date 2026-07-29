@@ -96,6 +96,7 @@ type webhookPayload struct {
 	Reason         string `json:"reason"`
 	DryRun         bool   `json:"dryRun"`
 	Time           string `json:"time"`
+	ClusterName    string `json:"clusterName,omitempty"`
 }
 
 func webhookPayloadFor(e Event) webhookPayload {
@@ -112,6 +113,7 @@ func webhookPayloadFor(e Event) webhookPayload {
 		Threshold:      thresholdText(e.Threshold),
 		Reason:         e.Reason,
 		DryRun:         e.DryRun,
+		ClusterName:    e.ClusterName,
 	}
 	if e.Window > 0 {
 		p.Window = e.Window.String()
@@ -185,22 +187,38 @@ func (s DatadogEventSink) Send(ctx context.Context, e Event) error {
 	if site == "" {
 		site = "datadoghq.com"
 	}
+	url := "https://api." + site + "/api/v1/events"
+	return postJSON(ctx, defaultClient(s.Client), url, datadogEventPayloadFor(e), map[string]string{"DD-API-KEY": s.APIKey})
+}
+
+func datadogEventPayloadFor(e Event) map[string]any {
 	alertType := "warning"
 	if e.Type == EventCircuitBreakerTripped {
 		alertType = "error"
 	}
-	payload := map[string]any{
+	// Tag keys follow the Datadog agent's out-of-the-box Kubernetes tags
+	// (kube_cluster_name, kube_namespace, ...) so events correlate with
+	// agent-tagged metrics and logs; workload/kind stay as kind-agnostic keys.
+	tags := []string{
+		"kube_namespace:" + e.Namespace,
+		"workload:" + e.Workload,
+		"kind:" + e.Kind,
+		"kube_container_name:" + e.Container,
+		"source:memory-leak-reloader",
+	}
+	switch e.Kind {
+	case "Deployment":
+		tags = append(tags, "kube_deployment:"+e.Workload)
+	case "StatefulSet":
+		tags = append(tags, "kube_stateful_set:"+e.Workload)
+	}
+	if e.ClusterName != "" {
+		tags = append(tags, "kube_cluster_name:"+e.ClusterName)
+	}
+	return map[string]any{
 		"title":      e.Title(),
 		"text":       e.Body(),
 		"alert_type": alertType,
-		"tags": []string{
-			"namespace:" + e.Namespace,
-			"workload:" + e.Workload,
-			"kind:" + e.Kind,
-			"container:" + e.Container,
-			"source:memory-leak-reloader",
-		},
+		"tags":       tags,
 	}
-	url := "https://api." + site + "/api/v1/events"
-	return postJSON(ctx, defaultClient(s.Client), url, payload, map[string]string{"DD-API-KEY": s.APIKey})
 }
