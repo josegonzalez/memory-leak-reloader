@@ -7,8 +7,9 @@ import (
 )
 
 // buildSlackBlocks renders an Event as Slack Block Kit: header + summary section
-// + a 2-column fields section + context + divider. It also returns a plain-text
-// fallback used as the message `text` (notifications/accessibility).
+// + a 2-column fields section + an optional sample chart + context + divider. It
+// also returns a plain-text fallback used as the message `text`
+// (notifications/accessibility).
 func buildSlackBlocks(e Event) ([]map[string]any, string) {
 	emoji, verb := slackHeader(e)
 
@@ -30,12 +31,20 @@ func buildSlackBlocks(e Event) ([]map[string]any, string) {
 				mrkdwnField("Window", windowText(e.Window)),
 			},
 		},
-		{
+	}
+	if chart := renderChart(e.Samples, e.Threshold); chart != "" {
+		blocks = append(blocks, map[string]any{
+			"type": "section",
+			"text": map[string]any{"type": "mrkdwn", "text": "```\n" + chart + "\n```"},
+		})
+	}
+	blocks = append(blocks,
+		map[string]any{
 			"type":     "context",
 			"elements": []map[string]any{{"type": "mrkdwn", "text": slackContext(e)}},
 		},
-		{"type": "divider"},
-	}
+		map[string]any{"type": "divider"},
+	)
 	return blocks, e.Title() + " — " + e.Body()
 }
 

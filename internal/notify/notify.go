@@ -21,6 +21,12 @@ const (
 	EventRestartDeferred       EventType = "RestartDeferred"
 )
 
+// SamplePoint is one memory observation carried on an Event for charting.
+type SamplePoint struct {
+	Time  time.Time
+	Bytes int64
+}
+
 // Event is the payload delivered to sinks.
 type Event struct {
 	Type      EventType
@@ -35,6 +41,10 @@ type Event struct {
 	Reason    string
 	DryRun    bool
 	Time      time.Time
+
+	// Samples is the sampled working-set series that drove the decision,
+	// oldest-first; empty means sinks render no chart.
+	Samples []SamplePoint
 
 	// ClusterName is the operator-defined name of the cluster the controller
 	// runs in; empty means it is omitted from every sink.

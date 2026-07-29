@@ -203,6 +203,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	var breach *Target
 	var breachPod *corev1.Pod
 	var result sampling.Result
+	var breachSamples []sampling.Sample
 	for i := range pods {
 		pod := &pods[i]
 		if !podReady(pod) || r.podAge(pod) < podCfg.StartupGrace {
@@ -227,11 +228,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 		for j := range targets {
 			key := sampling.Key{Namespace: pod.Namespace, Pod: pod.Name, Container: targets[j].Name}
-			res := sampling.Detect(r.Store.Samples(key), targets[j].Det, now)
+			samples := r.Store.Samples(key)
+			res := sampling.Detect(samples, targets[j].Det, now)
 			if res.Leaking {
 				breach = &targets[j]
 				breachPod = pod
 				result = res
+				breachSamples = samples
 				break
 			}
 		}
@@ -253,7 +256,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if restart.BreakerTripped(policy.Status, curVersion, now, r.RestartWindow, r.MaxRestartsPerWindow) {
 		r.Recorder.Eventf(wl.Object(), nil, corev1.EventTypeWarning, reasonCircuitBreaker, "Restart",
 			"max restarts per window reached; not restarting %s", wkey)
-		r.notify(ctx, notify.EventCircuitBreakerTripped, wl, breach, result, now, podCfg)
+		r.notify(ctx, notify.EventCircuitBreakerTripped, wl, breach, result, breachSamples, now, podCfg)
 		return r.skip(policy, "circuit_breaker")
 	}
 
@@ -270,7 +273,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		metrics.RolloutsDeferred.WithLabelValues(wl.Ref.Namespace, string(wl.Kind), wl.Ref.Name).Inc()
 		r.Recorder.Eventf(wl.Object(), nil, corev1.EventTypeNormal, reasonRestartDeferred, "Restart",
 			"restart deferred: outside maintenance window")
-		r.notify(ctx, notify.EventRestartDeferred, wl, breach, result, now, podCfg)
+		r.notify(ctx, notify.EventRestartDeferred, wl, breach, result, breachSamples, now, podCfg)
 		d := windows.NextOpening(now).Sub(now)
 		if d <= 0 {
 			d = r.RequeueAfter
@@ -315,7 +318,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		r.Recorder.Eventf(wl.Object(), nil, corev1.EventTypeNormal, reasonWouldRestart, "Restart",
 			"[dry-run] would restart %s due to container %s (observed=%d threshold=%d)", wkey, breach.Name, result.Observed, result.Threshold)
 		metrics.RolloutsTriggered.WithLabelValues(wl.Ref.Namespace, string(wl.Kind), wl.Ref.Name, "dry_run").Inc()
-		r.notify(ctx, notify.EventRestartTriggered, wl, breach, result, now, podCfg)
+		r.notify(ctx, notify.EventRestartTriggered, wl, breach, result, breachSamples, now, podCfg)
 		return ctrl.Result{}, nil
 	}
 
@@ -342,7 +345,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	metrics.RolloutsTriggered.WithLabelValues(wl.Ref.Namespace, string(wl.Kind), wl.Ref.Name, "success").Inc()
 	r.Recorder.Eventf(wl.Object(), nil, corev1.EventTypeNormal, reasonRestartTriggered, "Restart",
 		"restarted %s due to container %s (observed=%d threshold=%d, mode=%s)", wkey, breach.Name, result.Observed, result.Threshold, breach.Det.Mode)
-	r.notify(ctx, notify.EventRestartTriggered, wl, breach, result, now, podCfg)
+	r.notify(ctx, notify.EventRestartTriggered, wl, breach, result, breachSamples, now, podCfg)
 
 	// Poll until the rollout settles, then the slot is released.
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
@@ -406,7 +409,7 @@ func (r *Reconciler) captureProfile(ctx context.Context, pod *corev1.Pod, wl *re
 	}
 }
 
-func (r *Reconciler) notify(ctx context.Context, t notify.EventType, wl *restart.Workload, breach *Target, result sampling.Result, now time.Time, podCfg config.PodConfig) {
+func (r *Reconciler) notify(ctx context.Context, t notify.EventType, wl *restart.Workload, breach *Target, result sampling.Result, samples []sampling.Sample, now time.Time, podCfg config.PodConfig) {
 	if r.Notifier == nil {
 		return
 	}
@@ -434,6 +437,7 @@ func (r *Reconciler) notify(ctx context.Context, t notify.EventType, wl *restart
 		Reason:       result.Reason,
 		DryRun:       podCfg.DryRun,
 		Time:         now,
+		Samples:      toSamplePoints(samples),
 		ClusterName:  r.ClusterName,
 		Routes:       routes,
 		SlackChannel: podCfg.SlackChannel,
