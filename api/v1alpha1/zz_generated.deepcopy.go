@@ -167,6 +167,16 @@ func (in *MemoryLeakPolicySpec) DeepCopyInto(out *MemoryLeakPolicySpec) {
 		*out = new(v1.Duration)
 		**out = **in
 	}
+	if in.RestartWindow != nil {
+		in, out := &in.RestartWindow, &out.RestartWindow
+		*out = new(v1.Duration)
+		**out = **in
+	}
+	if in.MaxRestartsPerWindow != nil {
+		in, out := &in.MaxRestartsPerWindow, &out.MaxRestartsPerWindow
+		*out = new(int)
+		**out = **in
+	}
 	if in.DryRun != nil {
 		in, out := &in.DryRun, &out.DryRun
 		*out = new(bool)

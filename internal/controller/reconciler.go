@@ -73,9 +73,7 @@ type Reconciler struct {
 	// notifications; empty omits it.
 	ClusterName string
 
-	RestartWindow        time.Duration
-	MaxRestartsPerWindow int
-	RequeueAfter         time.Duration
+	RequeueAfter time.Duration
 
 	warnedUnmonitorable sync.Map // pod UID -> struct{}
 	lastWouldRestart    sync.Map // workload key -> time.Time (dry-run notify throttle)
@@ -187,7 +185,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				outcome = v1alpha1.OutcomeSuperseded
 			}
 			restart.CompleteInFlight(&policy.Status, now, outcome)
-			restart.RecomputeObservability(&policy.Status, now, podCfg.Cooldown, r.RestartWindow, r.MaxRestartsPerWindow)
+			restart.RecomputeObservability(&policy.Status, now, podCfg.Cooldown, podCfg.RestartWindow, podCfg.MaxRestartsPerWindow)
 			if err := r.State.Persist(ctx, policy); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -255,7 +253,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if restart.InCooldown(policy.Status, now, podCfg.Cooldown) {
 		return r.skip(policy, "cooldown")
 	}
-	if restart.BreakerTripped(policy.Status, curVersion, now, r.RestartWindow, r.MaxRestartsPerWindow) {
+	if restart.BreakerTripped(policy.Status, curVersion, now, podCfg.RestartWindow, podCfg.MaxRestartsPerWindow) {
 		r.Recorder.Eventf(wl.Object(), nil, corev1.EventTypeWarning, reasonCircuitBreaker, "Restart",
 			"max restarts per window reached; not restarting %s", wkey)
 		r.notify(ctx, notify.EventCircuitBreakerTripped, wl, breach, result, breachSamples, now, podCfg)
@@ -329,9 +327,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// have over-counted (safe) rather than under-counted.
 	restart.ApplyRestart(&policy.Status, wl, restart.Cause{
 		Container: breach.Name, Observed: result.Observed, Threshold: result.Threshold, Mode: string(breach.Det.Mode),
-	}, now, r.RestartWindow)
+	}, now, podCfg.RestartWindow)
 	policy.Status.LastNotification = &v1alpha1.NotificationRef{Event: string(notify.EventRestartTriggered), NotifiedAt: metav1.NewTime(now)}
-	restart.RecomputeObservability(&policy.Status, now, podCfg.Cooldown, r.RestartWindow, r.MaxRestartsPerWindow)
+	restart.RecomputeObservability(&policy.Status, now, podCfg.Cooldown, podCfg.RestartWindow, podCfg.MaxRestartsPerWindow)
 	if err := r.State.Persist(ctx, policy); err != nil {
 		r.Gate.Release(wkey)
 		metrics.InflightRollouts.Set(float64(r.Gate.Inflight()))

@@ -37,6 +37,7 @@ const mib = 1024 * 1024
 
 func boolp(b bool) *bool    { return &b }
 func int32p(i int32) *int32 { return &i }
+func intp(i int) *int       { return &i }
 
 func startEnv(t *testing.T) (client.Client, func()) {
 	t.Helper()
@@ -162,17 +163,15 @@ func seedLeakingDeployment(t *testing.T, c client.Client, ns string) *controller
 	}
 
 	return &controller.Reconciler{
-		Client:               c,
-		Clock:                clock.Real{},
-		Store:                store,
-		State:                restart.NewStore(c),
-		Recorder:             events.NewFakeRecorder(64),
-		Defaults:             config.Defaults{Detection: config.Detection{Mode: config.ModeSustained, ThresholdPercent: 85, Window: 10 * time.Minute}, StartupGrace: 5 * time.Minute, Cooldown: 30 * time.Minute},
-		Kinds:                restart.Kinds{Deployments: true},
-		Gate:                 gate.New(1),
-		RestartWindow:        24 * time.Hour,
-		MaxRestartsPerWindow: 3,
-		RequeueAfter:         30 * time.Second,
+		Client:       c,
+		Clock:        clock.Real{},
+		Store:        store,
+		State:        restart.NewStore(c),
+		Recorder:     events.NewFakeRecorder(64),
+		Defaults:     config.Defaults{Detection: config.Detection{Mode: config.ModeSustained, ThresholdPercent: 85, Window: 10 * time.Minute}, StartupGrace: 5 * time.Minute, Cooldown: 30 * time.Minute, RestartWindow: 24 * time.Hour, MaxRestartsPerWindow: 3},
+		Kinds:        restart.Kinds{Deployments: true},
+		Gate:         gate.New(1),
+		RequeueAfter: 30 * time.Second,
 	}
 }
 
@@ -236,6 +235,55 @@ func TestReconcile_TriggersRestartOnLeak(t *testing.T) {
 	}
 	if got := testutil.ToFloat64(metrics.ThresholdBreaches.WithLabelValues(ns, "Deployment", "api", string(config.ModeSustained))); got != 1 {
 		t.Errorf("threshold breaches counter = %v want 1", got)
+	}
+}
+
+// TestReconcile_PerPolicyRestartWindowOverride proves that a policy-level
+// maxRestartsPerWindow overrides the controller-wide default (3, set by
+// seedLeakingDeployment): tightened to 1 and seeded as already exhausted, the
+// very next reconcile trips the breaker - which the controller-wide default
+// alone would not have done.
+func TestReconcile_PerPolicyRestartWindowOverride(t *testing.T) {
+	c, stop := startEnv(t)
+	defer stop()
+	ctx := context.Background()
+	const ns = "restart-window-override"
+
+	r := seedLeakingDeployment(t, c, ns)
+
+	policy := getState(t, c, ns)
+	policy.Spec.MaxRestartsPerWindow = intp(1)
+	if err := c.Update(ctx, policy); err != nil {
+		t.Fatalf("update policy spec: %v", err)
+	}
+
+	// Seed the breaker as already exhausted under the per-policy cap of 1.
+	// Status.Version is left empty, which sameWindow treats as a wildcard
+	// match, so the window applies regardless of the deployment's current
+	// pod-template version.
+	policy = getState(t, c, ns)
+	policy.Status.RestartCount = 1
+	policy.Status.WindowStart = &metav1.Time{Time: time.Now()}
+	if err := c.Status().Update(ctx, policy); err != nil {
+		t.Fatalf("seed breaker status: %v", err)
+	}
+
+	if _, err := r.Reconcile(ctx, policyRequest(ns)); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	drainEvents(t, r, "CircuitBreakerTripped")
+
+	if got := testutil.ToFloat64(metrics.RolloutsSkipped.WithLabelValues(ns, "Deployment", "api", "circuit_breaker")); got != 1 {
+		t.Errorf("rollouts skipped circuit_breaker counter = %v want 1", got)
+	}
+
+	got := &appsv1.Deployment{}
+	if err := c.Get(ctx, types.NamespacedName{Namespace: ns, Name: "api"}, got); err != nil {
+		t.Fatalf("get deploy: %v", err)
+	}
+	if ann := got.Spec.Template.Annotations[config.AnnotationRestartedAt]; ann != "" {
+		t.Fatalf("breaker should have blocked the restart, but restartedAt was patched (%q)", ann)
 	}
 }
 

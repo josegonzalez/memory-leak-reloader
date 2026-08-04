@@ -209,9 +209,11 @@ func run() error {
 		Detection: config.Detection{
 			Mode: detMode, ThresholdPercent: *thresholdPct, Window: *windowFlag, TrendMinGrowth: growth,
 		},
-		SampleInterval: *sampleEvery,
-		StartupGrace:   *startupGrace,
-		Cooldown:       *cooldown,
+		SampleInterval:       *sampleEvery,
+		StartupGrace:         *startupGrace,
+		Cooldown:             *cooldown,
+		RestartWindow:        *restartWindow,
+		MaxRestartsPerWindow: *maxPerWindow,
 	}
 
 	// Profile capturer (optional).
@@ -245,22 +247,20 @@ func run() error {
 
 	state := restart.NewStore(mgr.GetClient())
 	reconciler := &controller.Reconciler{
-		Client:               mgr.GetClient(),
-		Clock:                clock.Real{},
-		Store:                store,
-		State:                state,
-		Recorder:             mgr.GetEventRecorder("memory-leak-reloader"),
-		Defaults:             defaults,
-		Kinds:                kinds,
-		Gate:                 gate.New(*globalMax),
-		Windows:              windows,
-		Capturer:             capturer,
-		ProfileEnabled:       *profileEnabled,
-		Notifier:             notifier,
-		ClusterName:          *clusterName,
-		RestartWindow:        *restartWindow,
-		MaxRestartsPerWindow: *maxPerWindow,
-		RequeueAfter:         *requeueAfter,
+		Client:         mgr.GetClient(),
+		Clock:          clock.Real{},
+		Store:          store,
+		State:          state,
+		Recorder:       mgr.GetEventRecorder("memory-leak-reloader"),
+		Defaults:       defaults,
+		Kinds:          kinds,
+		Gate:           gate.New(*globalMax),
+		Windows:        windows,
+		Capturer:       capturer,
+		ProfileEnabled: *profileEnabled,
+		Notifier:       notifier,
+		ClusterName:    *clusterName,
+		RequeueAfter:   *requeueAfter,
 	}
 	if err := reconciler.SetupWithManager(mgr, policyEvents); err != nil {
 		return fmt.Errorf("setup reconciler: %w", err)

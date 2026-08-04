@@ -208,6 +208,13 @@ spec:
                     rule: self.start < self.end
                 maxItems: 24
                 type: array
+              maxRestartsPerWindow:
+                description: |-
+                  MaxRestartsPerWindow is the per-workload circuit-breaker cap within
+                  RestartWindow. Unset inherits the controller default; 0 disables the
+                  breaker for this workload.
+                minimum: 0
+                type: integer
               notifyRoutes:
                 description: |-
                   NotifyRoutes names notification routes to target (replaces the default
@@ -223,6 +230,11 @@ spec:
                 description: 'ProfileCapture is a tri-state override: nil = inherit
                   the controller default.'
                 type: boolean
+              restartWindow:
+                description: |-
+                  RestartWindow is the per-workload circuit-breaker window. Unset inherits
+                  the controller default.
+                type: string
               slackChannel:
                 maxLength: 256
                 type: string

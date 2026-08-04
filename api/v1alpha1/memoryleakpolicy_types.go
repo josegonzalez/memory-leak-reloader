@@ -161,6 +161,17 @@ type MemoryLeakPolicySpec struct {
 	// +optional
 	StartupGrace *metav1.Duration `json:"startupGrace,omitempty"`
 
+	// RestartWindow is the per-workload circuit-breaker window. Unset inherits
+	// the controller default.
+	// +optional
+	RestartWindow *metav1.Duration `json:"restartWindow,omitempty"`
+	// MaxRestartsPerWindow is the per-workload circuit-breaker cap within
+	// RestartWindow. Unset inherits the controller default; 0 disables the
+	// breaker for this workload.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	MaxRestartsPerWindow *int `json:"maxRestartsPerWindow,omitempty"`
+
 	// DryRun, when true (the default), makes the controller log/notify would-be
 	// restarts for this workload without acting. Set false to enforce restarts.
 	// +optional

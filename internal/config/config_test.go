@@ -18,15 +18,19 @@ func defaults() Defaults {
 			Window:           10 * time.Minute,
 			TrendMinGrowth:   resource.MustParse("100Mi"),
 		},
-		SampleInterval: 30 * time.Second,
-		StartupGrace:   5 * time.Minute,
-		Cooldown:       30 * time.Minute,
+		SampleInterval:       30 * time.Second,
+		StartupGrace:         5 * time.Minute,
+		Cooldown:             30 * time.Minute,
+		RestartWindow:        24 * time.Hour,
+		MaxRestartsPerWindow: 3,
 	}
 }
 
 func dur(d time.Duration) *metav1.Duration { return &metav1.Duration{Duration: d} }
 
 func qty(s string) *resource.Quantity { q := resource.MustParse(s); return &q }
+
+func intp(i int) *int { return &i }
 
 func TestResolvePolicy_Overrides(t *testing.T) {
 	spec := v1alpha1.MemoryLeakPolicySpec{
@@ -37,11 +41,13 @@ func TestResolvePolicy_Overrides(t *testing.T) {
 			Window:            dur(15 * time.Minute),
 			TrendMinGrowth:    qty("200Mi"),
 		},
-		Cooldown:       dur(time.Hour),
-		StartupGrace:   dur(2 * time.Minute),
-		Containers:     []string{"app", "worker"},
-		ProfileCapture: func() *bool { b := true; return &b }(),
-		PprofPath:      "/debug/pprof/heap",
+		Cooldown:             dur(time.Hour),
+		StartupGrace:         dur(2 * time.Minute),
+		RestartWindow:        dur(2 * time.Hour),
+		MaxRestartsPerWindow: intp(1),
+		Containers:           []string{"app", "worker"},
+		ProfileCapture:       func() *bool { b := true; return &b }(),
+		PprofPath:            "/debug/pprof/heap",
 	}
 	p := ResolvePolicy(defaults(), spec)
 	if p.Base.Mode != ModeCombined {
@@ -62,6 +68,12 @@ func TestResolvePolicy_Overrides(t *testing.T) {
 	if p.StartupGrace != 2*time.Minute {
 		t.Errorf("startupGrace = %v want 2m", p.StartupGrace)
 	}
+	if p.RestartWindow != 2*time.Hour {
+		t.Errorf("restartWindow = %v want 2h", p.RestartWindow)
+	}
+	if p.MaxRestartsPerWindow != 1 {
+		t.Errorf("maxRestartsPerWindow = %d want 1", p.MaxRestartsPerWindow)
+	}
 	if len(p.Containers) != 2 || p.Containers[0] != "app" || p.Containers[1] != "worker" {
 		t.Errorf("containers = %v want [app worker]", p.Containers)
 	}
@@ -80,6 +92,16 @@ func TestResolvePolicy_Defaults(t *testing.T) {
 	}
 	if p.Cooldown != 30*time.Minute || p.StartupGrace != 5*time.Minute {
 		t.Errorf("duration defaults not applied: cooldown=%v grace=%v", p.Cooldown, p.StartupGrace)
+	}
+	if p.RestartWindow != 24*time.Hour || p.MaxRestartsPerWindow != 3 {
+		t.Errorf("breaker defaults not applied: window=%v max=%d", p.RestartWindow, p.MaxRestartsPerWindow)
+	}
+}
+
+func TestResolvePolicy_MaxRestartsPerWindowZeroDisablesBreaker(t *testing.T) {
+	p := ResolvePolicy(defaults(), v1alpha1.MemoryLeakPolicySpec{MaxRestartsPerWindow: intp(0)})
+	if p.MaxRestartsPerWindow != 0 {
+		t.Errorf("maxRestartsPerWindow = %d want 0 (explicit override, not the controller default of 3)", p.MaxRestartsPerWindow)
 	}
 }
 

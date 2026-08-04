@@ -125,12 +125,57 @@ func TestPerPodNotificationRouting(t *testing.T) {
 	}
 }
 
+// TestPerPolicyRestartWindowOverride proves that a policy-level
+// maxRestartsPerWindow governs the breaker instead of the chart's looser
+// default (3 restarts/24h): tightened to 1 restart/1h on the policy, the
+// second leak detected after the first restart trips the breaker rather than
+// firing another rollout restart.
+func TestPerPolicyRestartWindowOverride(t *testing.T) {
+	h := setup(t)
+	ns := "breaker-override"
+	h.run(t, "kubectl", "create", "ns", ns)
+	t.Cleanup(func() { _, _ = h.tryRun("kubectl", "delete", "ns", ns, "--wait=false") })
+
+	manifest := withStdin(leakyDeploymentYAML())
+	t.Cleanup(func() { _ = os.Remove(manifest) })
+	h.run(t, "kubectl", "-n", ns, "apply", "-f", manifest)
+	h.run(t, "kubectl", "-n", ns, "rollout", "status", "deploy/leaky", "--timeout=120s")
+
+	// Chart-wide breaker stays at its normal (loose) default; only the
+	// per-policy override below tightens it. A short cooldown makes sure the
+	// second leak is blocked by the breaker rather than by cooldown.
+	h.installChart(t, append(scopedDetectionArgs(ns), "--set", "rollout.cooldown=5s")...)
+
+	applyPolicy(t, h, ns, "  dryRun: false\n  maxRestartsPerWindow: 1\n  restartWindow: 1h")
+
+	if !waitFor(t, 4*time.Minute, func() bool { return restartedAtAnnotationIn(t, h, ns) != "" }) {
+		t.Fatal("expected the first restart to fire")
+	}
+	first := restartedAtAnnotationIn(t, h, ns)
+
+	// Past cooldown, the still-leaking replacement pod should trip the
+	// per-policy breaker (max 1/1h) rather than trigger a second restart.
+	if !waitFor(t, 4*time.Minute, func() bool {
+		out, _ := h.tryRun("kubectl", "-n", ns, "get", "events", "--field-selector", "reason=CircuitBreakerTripped", "-o", "name")
+		return strings.TrimSpace(out) != ""
+	}) {
+		t.Fatal("expected a CircuitBreakerTripped event once the per-policy maxRestartsPerWindow=1 is exhausted")
+	}
+	if got := restartedAtAnnotationIn(t, h, ns); got != first {
+		t.Fatalf("breaker should have blocked a second restart, annotation changed: %q -> %q", first, got)
+	}
+}
+
 func echoReceiver(name string) string {
 	return strings.ReplaceAll(echoReceiverTmpl, "NAME", name)
 }
 
 func restartedAtAnnotation(t *testing.T, h *harness) string {
-	out, _ := h.tryRun("kubectl", "-n", h.namespace, "get", "deploy", "leaky",
+	return restartedAtAnnotationIn(t, h, h.namespace)
+}
+
+func restartedAtAnnotationIn(t *testing.T, h *harness, ns string) string {
+	out, _ := h.tryRun("kubectl", "-n", ns, "get", "deploy", "leaky",
 		"-o", `jsonpath={.spec.template.metadata.annotations.kubectl\.kubernetes\.io/restartedAt}`)
 	return strings.TrimSpace(out)
 }
@@ -182,9 +227,10 @@ spec:
 `
 
 // memoryLeakPolicyYAML renders a MemoryLeakPolicy that opts the "leaky"
-// Deployment into monitoring. notifyRoutesLine is an optional spec line (already
-// indented two spaces), e.g. `  notifyRoutes: ["team"]`; pass "" for none.
-func memoryLeakPolicyYAML(notifyRoutesLine string) string {
+// Deployment into monitoring. extraSpecLines is optional, already-indented
+// (two spaces) additional spec content, e.g. `  notifyRoutes: ["team"]` or
+// `  maxRestartsPerWindow: 1\n  restartWindow: 1h`; pass "" for none.
+func memoryLeakPolicyYAML(extraSpecLines string) string {
 	return fmt.Sprintf(`
 apiVersion: memreload.io/v1alpha1
 kind: MemoryLeakPolicy
@@ -195,14 +241,14 @@ spec:
     kind: Deployment
     name: leaky
 %s
-`, notifyRoutesLine)
+`, extraSpecLines)
 }
 
 // applyPolicy applies the MemoryLeakPolicy, retrying briefly so it tolerates the
 // CRD not yet being established right after the chart install.
-func applyPolicy(t *testing.T, h *harness, ns, notifyRoutesLine string) {
+func applyPolicy(t *testing.T, h *harness, ns, extraSpecLines string) {
 	t.Helper()
-	m := withStdin(memoryLeakPolicyYAML(notifyRoutesLine))
+	m := withStdin(memoryLeakPolicyYAML(extraSpecLines))
 	t.Cleanup(func() { _ = os.Remove(m) })
 	if !waitFor(t, 2*time.Minute, func() bool {
 		_, err := h.tryRun("kubectl", "-n", ns, "apply", "-f", m)

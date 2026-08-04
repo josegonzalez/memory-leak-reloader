@@ -21,6 +21,8 @@ inherits the default.
 | `detection.trendMinGrowth` | `100Mi` | Min projected growth over a window (trend modes). |
 | `cooldown` | `30m` | Per-workload cooldown. |
 | `startupGrace` | `5m` | Ignore pods younger than this. |
+| `restartWindow` | `1h` | Per-workload circuit-breaker window. |
+| `maxRestartsPerWindow` | `1` | Per-workload circuit-breaker cap within `restartWindow`. `0` disables the breaker for this workload. |
 | `dryRun` | `false` | Default `true`: log/notify only. `false` enforces. |
 | `containers` | `["app","worker"]` or `["*"]` | Container set to monitor. |
 | `containerOverrides` | see below | Per-container detection overrides. |
