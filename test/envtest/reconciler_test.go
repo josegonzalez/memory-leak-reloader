@@ -188,6 +188,46 @@ func getState(t *testing.T, c client.Client, ns string) *v1alpha1.MemoryLeakPoli
 	return p
 }
 
+// TestMemoryLeakPolicy_RestartWindowValidation exercises the CRD's CEL rule
+// rejecting a non-positive restartWindow (a zero or negative window would
+// otherwise silently disable the circuit breaker: sameWindow's
+// now.Sub(start) >= window check is always true when window <= 0, so
+// BreakerTripped never trips and RecomputeObservability keeps reporting the
+// full restartsRemaining cap).
+func TestMemoryLeakPolicy_RestartWindowValidation(t *testing.T) {
+	c, stop := startEnv(t)
+	defer stop()
+	ctx := context.Background()
+	const ns = "restart-window-validation"
+
+	if err := c.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}}); err != nil {
+		t.Fatalf("create ns: %v", err)
+	}
+
+	newPolicy := func(name string, window *metav1.Duration) *v1alpha1.MemoryLeakPolicy {
+		return &v1alpha1.MemoryLeakPolicy{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+			Spec: v1alpha1.MemoryLeakPolicySpec{
+				WorkloadRef:   v1alpha1.WorkloadRef{Kind: "Deployment", Name: "api"},
+				RestartWindow: window,
+			},
+		}
+	}
+
+	if err := c.Create(ctx, newPolicy("zero", &metav1.Duration{Duration: 0})); err == nil {
+		t.Error("expected restartWindow: 0s to be rejected by CRD validation")
+	}
+	if err := c.Create(ctx, newPolicy("negative", &metav1.Duration{Duration: -time.Minute})); err == nil {
+		t.Error("expected a negative restartWindow to be rejected by CRD validation")
+	}
+	if err := c.Create(ctx, newPolicy("valid", &metav1.Duration{Duration: time.Hour})); err != nil {
+		t.Errorf("expected a positive restartWindow to be accepted, got: %v", err)
+	}
+	if err := c.Create(ctx, newPolicy("unset", nil)); err != nil {
+		t.Errorf("expected an unset restartWindow to be accepted, got: %v", err)
+	}
+}
+
 func TestReconcile_TriggersRestartOnLeak(t *testing.T) {
 	c, stop := startEnv(t)
 	defer stop()

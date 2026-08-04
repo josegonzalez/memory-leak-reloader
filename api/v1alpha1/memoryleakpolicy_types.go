@@ -164,6 +164,7 @@ type MemoryLeakPolicySpec struct {
 	// RestartWindow is the per-workload circuit-breaker window. Unset inherits
 	// the controller default.
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="duration(self) > duration('0s')",message="restartWindow must be a positive duration"
 	RestartWindow *metav1.Duration `json:"restartWindow,omitempty"`
 	// MaxRestartsPerWindow is the per-workload circuit-breaker cap within
 	// RestartWindow. Unset inherits the controller default; 0 disables the

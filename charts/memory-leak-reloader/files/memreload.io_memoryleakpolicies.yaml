@@ -235,6 +235,9 @@ spec:
                   RestartWindow is the per-workload circuit-breaker window. Unset inherits
                   the controller default.
                 type: string
+                x-kubernetes-validations:
+                - message: restartWindow must be a positive duration
+                  rule: duration(self) > duration('0s')
               slackChannel:
                 maxLength: 256
                 type: string
