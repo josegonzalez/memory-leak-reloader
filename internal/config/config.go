@@ -44,9 +44,11 @@ type Detection struct {
 // base for every workload before policy overrides are applied.
 type Defaults struct {
 	Detection
-	SampleInterval time.Duration
-	StartupGrace   time.Duration
-	Cooldown       time.Duration
+	SampleInterval       time.Duration
+	StartupGrace         time.Duration
+	Cooldown             time.Duration
+	RestartWindow        time.Duration
+	MaxRestartsPerWindow int
 }
 
 // PodConfig is the resolved configuration for a managed workload's pods:
@@ -56,6 +58,11 @@ type PodConfig struct {
 	Base         Detection
 	StartupGrace time.Duration
 	Cooldown     time.Duration
+
+	// RestartWindow and MaxRestartsPerWindow are the resolved circuit-breaker
+	// settings for the workload.
+	RestartWindow        time.Duration
+	MaxRestartsPerWindow int
 
 	// DryRun is the effective mode for the workload: true (the CRD default)
 	// logs/notifies would-be restarts without acting.
@@ -89,23 +96,31 @@ type PodConfig struct {
 // default.
 func ResolvePolicy(d Defaults, spec v1alpha1.MemoryLeakPolicySpec) PodConfig {
 	p := PodConfig{
-		Base:               resolveDetection(d.Detection, spec.Detection),
-		StartupGrace:       d.StartupGrace,
-		Cooldown:           d.Cooldown,
-		DryRun:             true,
-		Containers:         spec.Containers,
-		Overrides:          spec.ContainerOverrides,
-		ProfileCapture:     spec.ProfileCapture,
-		PprofPath:          spec.PprofPath,
-		MaintenanceWindows: spec.MaintenanceWindows,
-		NotifyRoutes:       spec.NotifyRoutes,
-		SlackChannel:       spec.SlackChannel,
+		Base:                 resolveDetection(d.Detection, spec.Detection),
+		StartupGrace:         d.StartupGrace,
+		Cooldown:             d.Cooldown,
+		RestartWindow:        d.RestartWindow,
+		MaxRestartsPerWindow: d.MaxRestartsPerWindow,
+		DryRun:               true,
+		Containers:           spec.Containers,
+		Overrides:            spec.ContainerOverrides,
+		ProfileCapture:       spec.ProfileCapture,
+		PprofPath:            spec.PprofPath,
+		MaintenanceWindows:   spec.MaintenanceWindows,
+		NotifyRoutes:         spec.NotifyRoutes,
+		SlackChannel:         spec.SlackChannel,
 	}
 	if spec.Cooldown != nil {
 		p.Cooldown = spec.Cooldown.Duration
 	}
 	if spec.StartupGrace != nil {
 		p.StartupGrace = spec.StartupGrace.Duration
+	}
+	if spec.RestartWindow != nil {
+		p.RestartWindow = spec.RestartWindow.Duration
+	}
+	if spec.MaxRestartsPerWindow != nil {
+		p.MaxRestartsPerWindow = *spec.MaxRestartsPerWindow
 	}
 	// The API server defaults spec.dryRun to true; the nil check keeps
 	// dry-run the fail-safe for objects built without server defaulting.
