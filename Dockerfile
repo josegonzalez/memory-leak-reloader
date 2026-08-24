@@ -10,7 +10,7 @@ ARG BIN_SOURCE=build
 # Build stage. Pin to the native build platform and cross-compile (CGO is off,
 # GOARCH is set below) so the arm64 image is not compiled under slow QEMU
 # emulation.
-FROM --platform=$BUILDPLATFORM golang:1.26 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27 AS build
 WORKDIR /src
 
 # Cache dependencies.
